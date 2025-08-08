@@ -1,12 +1,11 @@
 import { NextResponse, NextRequest } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/libs/next-auth";
+import { auth } from "@/libs/next-auth";
 import connectMongo from "@/libs/mongoose";
 import { createCustomerPortal } from "@/libs/stripe";
 import User from "@/models/User";
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
 
   if (session) {
     try {
@@ -16,7 +15,7 @@ export async function POST(req: NextRequest) {
 
       const { id } = session.user;
 
-      const user = await User.findById(id);
+      const user = id ? await User.findById(String(id)) : null;
 
       if (!user?.customerId) {
         return NextResponse.json(

@@ -1,5 +1,11 @@
-import themes from "daisyui/src/theming/themes";
 import { ConfigProps } from "./types/config";
+
+// DaisyUI v5 no longer exports themes directly, using fallback color
+const themes = {
+  light: {
+    primary: "#3b82f6", // blue-500
+  }
+};
 
 const config = {
   // REQUIRED

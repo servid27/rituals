@@ -1,6 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/libs/next-auth";
+import { auth } from "@/libs/next-auth";
 import { createCheckout } from "@/libs/stripe";
 import connectMongo from "@/libs/mongoose";
 import User from "@/models/User";
@@ -32,13 +31,17 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
 
     await connectMongo();
 
-    const user = await User.findById(session?.user?.id);
-
     const { priceId, mode, successUrl, cancelUrl } = body;
+    
+    let user = null;
+    if (session?.user?.id) {
+      const { id } = session.user;
+      user = await User.findById(String(id));
+    }
 
     const stripeSessionURL = await createCheckout({
       priceId,

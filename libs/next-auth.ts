@@ -1,24 +1,19 @@
 import NextAuth from "next-auth";
-import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import EmailProvider from "next-auth/providers/email";
 import { MongoDBAdapter } from "@auth/mongodb-adapter";
 import config from "@/config";
 import connectMongo from "./mongo";
 
-interface NextAuthOptionsExtended extends NextAuthOptions {
-  adapter: any;
-}
-
-export const authOptions: NextAuthOptionsExtended = {
+export const authOptions = {
   // Set any random key in .env.local
   secret: process.env.NEXTAUTH_SECRET,
   providers: [
     GoogleProvider({
       // Follow the "Login with Google" tutorial to get your credentials
-      clientId: process.env.GOOGLE_ID,
-      clientSecret: process.env.GOOGLE_SECRET,
-      async profile(profile) {
+      clientId: process.env.GOOGLE_ID!,
+      clientSecret: process.env.GOOGLE_SECRET!,
+      profile(profile) {
         return {
           id: profile.sub,
           name: profile.given_name ? profile.given_name : profile.name,
@@ -52,7 +47,7 @@ export const authOptions: NextAuthOptionsExtended = {
   ...(connectMongo && { adapter: MongoDBAdapter(connectMongo) }),
 
   callbacks: {
-    session: async ({ session, token }) => {
+    session: async ({ session, token }: any) => {
       if (session?.user) {
         session.user.id = token.sub;
       }
@@ -60,7 +55,7 @@ export const authOptions: NextAuthOptionsExtended = {
     },
   },
   session: {
-    strategy: "jwt",
+    strategy: "jwt" as const,
   },
   theme: {
     brandColor: config.colors.main,
@@ -70,4 +65,4 @@ export const authOptions: NextAuthOptionsExtended = {
   },
 };
 
-export default NextAuth(authOptions);
+export const { handlers, auth, signIn, signOut } = NextAuth(authOptions);
