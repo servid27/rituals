@@ -5,7 +5,7 @@ import { DailyRitual } from '@/types';
 
 interface DailyProgressProps {
   rituals: DailyRitual[];
-  onCompleteRitual?: (ritualId: string) => void;
+  onCompleteRitual?: (id: string) => void;
 }
 
 export default function DailyProgress({ rituals, onCompleteRitual }: DailyProgressProps) {
@@ -42,7 +42,7 @@ export default function DailyProgress({ rituals, onCompleteRitual }: DailyProgre
   if (rituals.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Today's Progress</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Today&apos;s Progress</h3>
         <div className="text-center py-6">
           <p className="text-gray-600">No rituals scheduled for today.</p>
         </div>
@@ -53,7 +53,7 @@ export default function DailyProgress({ rituals, onCompleteRitual }: DailyProgre
   return (
     <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Today's Progress</h3>
+        <h3 className="text-lg font-semibold text-gray-900">Today&apos;s Progress</h3>
         <div className="flex items-center space-x-2">
           <span className="text-sm text-gray-600">
             {completedRituals.size}/{rituals.length} completed
