@@ -168,7 +168,7 @@ const useStore = () => {
 };
 
 // ---------- Small UI bits ----------
-const NumberInput: React.FC<{ value: number; onChange: (n: number) => void; className?: string }> = ({
+const NumberInput: React.FC<{ value: number; onChange: (val: number) => void; className?: string }> = ({
   value,
   onChange,
   className,
@@ -223,7 +223,7 @@ const RoutineView: React.FC<{
   onEdit: () => void;
   onClose: () => void;
   sessions: SessionRecord[];
-  onRecord: (s: SessionRecord) => void;
+  onRecord: (session: SessionRecord) => void;
 }> = ({ routine, onEdit, onClose, sessions, onRecord }) => {
   const [running, setRunning] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -562,7 +562,7 @@ const RoutineView: React.FC<{
 // ---------- Editor with Drag & Drop ----------
 const RoutineEditor: React.FC<{
   draft: Routine;
-  onChange: (r: Routine) => void;
+  onChange: (routine: Routine) => void;
   onSave: () => void;
   onClose: () => void;
 }> = ({ draft, onChange, onSave, onClose }) => {
@@ -798,16 +798,16 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
         }
       }
     }
-  }, [searchParams]);
+  }, [searchParams, routines, setRoutines]);
   const openNew = () => {
-    const r: Routine = {
+    const routine: Routine = {
       id: uid(),
       name: 'New routine',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    setDraft(r);
+    setDraft(routine);
     setMode('edit');
   };
   const openView = (r: Routine) => {

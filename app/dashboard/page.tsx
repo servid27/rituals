@@ -1,9 +1,9 @@
 'use client';
 
+import React, { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import ButtonAccount from '@/components/ButtonAccount';
-import { useEffect, useState } from 'react';
 
 interface UserStats {
   totalRituals: number;
@@ -144,7 +144,7 @@ export default function Dashboard() {
           {/* Today's Progress Card */}
           <div className="p-4 rounded-2xl bg-blue-50 border transition-all duration-300 hover:shadow-lg hover:shadow-blue-200/50 hover:-translate-y-1 hover:bg-blue-100/80 group">
             <div className="font-semibold mb-2 group-hover:text-blue-700 transition-colors duration-300">
-              Today's Progress
+              Today&apos;s Progress
             </div>
             <div className="text-xs text-gray-700 space-y-1 min-h-[72px]">
               <div className="flex justify-between gap-2">
@@ -185,7 +185,7 @@ export default function Dashboard() {
               <div>Build healthy habits</div>
             </div>
             <div className="mt-2 text-[11px] text-gray-500 group-hover:text-emerald-600 transition-colors duration-300">
-              View & edit routines
+              View &amp; edit routines
             </div>
           </button>
 
@@ -261,7 +261,7 @@ export default function Dashboard() {
           {/* Completion Rate Donut */}
           <div className="p-6 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border transition-all duration-300 hover:shadow-lg hover:shadow-amber-200/50 hover:-translate-y-1">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-800">Today's Completion</h3>
+              <h3 className="font-semibold text-gray-800">Today&apos;s Completion</h3>
               <span className="text-xs text-amber-600 bg-amber-100 px-2 py-1 rounded-full">33%</span>
             </div>
             <div className="flex items-center justify-center">
@@ -331,7 +331,7 @@ export default function Dashboard() {
       {/* Today's Rituals Section */}
       {dailyRituals.length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-sm text-gray-600">Today's rituals</h2>
+          <h2 className="text-sm text-gray-600">Today&apos;s rituals</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {dailyRituals.slice(0, 4).map((ritual, idx) => {
               const bg = ['bg-amber-50', 'bg-sky-50', 'bg-emerald-50', 'bg-rose-50'][idx % 4];

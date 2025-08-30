@@ -1,4 +1,3 @@
-import { auth } from '@/libs/next-auth';
 import Image from 'next/image';
 import { UserProfile } from '@/types';
 
