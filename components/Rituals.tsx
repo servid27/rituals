@@ -22,21 +22,20 @@ const useStore = () => {
 
   // Load data from database
   const loadFromDatabase = useCallback(async () => {
-    console.log('LoadFromDatabase called, session user ID:', session?.user?.id);
     if (!session?.user?.id) return;
 
     try {
       const [routinesData, sessionsData] = await Promise.all([api.getRoutines(), api.getSessions()]);
 
-      console.log(
-        'Loaded routines from database:',
-        routinesData.map((r) => ({ id: r.id, name: r.name }))
-      );
       setRoutines(routinesData);
       setSessions(sessionsData);
+
+      // Use requestAnimationFrame to ensure the state updates are rendered
+      requestAnimationFrame(() => {
+        setIsLoading(false);
+      });
     } catch (error) {
       console.error('Error loading data from database:', error);
-    } finally {
       setIsLoading(false);
     }
   }, [session?.user?.id]);
@@ -80,32 +79,21 @@ const useStore = () => {
 
   // Delete routine from database
   const deleteRoutine = async (id: string) => {
-    console.log('DeleteRoutine called with ID:', id);
-    console.log(
-      'Current routines before delete:',
-      routines.map((r) => ({ id: r.id, name: r.name }))
-    );
-
     try {
       const success = await api.deleteRoutine(id);
-      console.log('Delete API response success:', success);
 
       if (success) {
         setRoutines((prev) => prev.filter((r) => r.id !== id));
-        console.log('Routine deleted successfully from local state');
       } else {
         // If delete failed, refresh data to sync with database
         console.log('Delete failed, refreshing data from database...');
         await loadFromDatabase();
-        console.log('Refresh completed');
       }
       return success;
     } catch (error) {
       console.error('Error deleting routine:', error);
       // On error, also refresh data to sync with database
-      console.log('Delete error occurred, refreshing data from database...');
       await loadFromDatabase();
-      console.log('Refresh after error completed');
       return false;
     }
   };
@@ -760,15 +748,7 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
 
       {mode === 'home' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm text-gray-600">Your routines</h2>
-            <button
-              onClick={loadFromDatabase}
-              className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border"
-            >
-              Refresh
-            </button>
-          </div>
+          <h2 className="text-sm text-gray-600">Your routines</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             {routines.map((r, idx) => (
               <RoutineCard key={r.id} routine={r} index={idx} onOpen={() => openView(r)} />

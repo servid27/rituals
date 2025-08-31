@@ -23,13 +23,7 @@ export async function GET() {
       routines.map((r) => ({ id: r.id, name: r.name }))
     );
 
-    const response = NextResponse.json({ routines });
-    // Add cache-busting headers
-    response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-    response.headers.set('Pragma', 'no-cache');
-    response.headers.set('Expires', '0');
-
-    return response;
+    return NextResponse.json({ routines });
   } catch (error) {
     console.error('Error fetching routines:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
