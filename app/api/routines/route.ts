@@ -81,16 +81,32 @@ export async function PUT(req: NextRequest) {
     const body = await req.json();
     const { id, name, tasks } = body;
 
+    console.log('PUT request received:', {
+      userId: session.user.id,
+      routineId: id,
+      hasName: !!name,
+      taskCount: tasks?.length,
+    });
+
     if (!id) {
       return NextResponse.json({ error: 'Routine ID is required' }, { status: 400 });
     }
 
     await connectMongo();
 
+    // First, let's see what routines exist for this user
+    const allUserRoutines = await Routine.find({ userId: session.user.id });
+    console.log(
+      'User has routines:',
+      allUserRoutines.map((r) => ({ id: r.id, name: r.name }))
+    );
+
     const routine = await Routine.findOne({
       userId: session.user.id,
       id: id,
     });
+
+    console.log('Found routine for update:', routine ? { id: routine.id, name: routine.name } : 'null');
 
     if (!routine) {
       return NextResponse.json({ error: 'Routine not found' }, { status: 404 });

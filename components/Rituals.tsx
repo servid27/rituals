@@ -4,198 +4,21 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 
-/**
- * Rituals — Google Keep-style routine cards + checklist with target time
- * Database-first with fallback to localStorage for migration.
- * This file is self-contained and compile-safe.
- *
- * Entities
- *  - Task:        { id, title, targetSeconds }
- *  - Routine:     { id, name, createdAt, updatedAt, tasks }
- *  - SessionRecord: summary written to history when you Finish
- */
+// Types
+import type { Task, Routine, SessionRecord } from '@/types/rituals';
 
-// ---------- Types ----------
-export type Task = { id: string; title: string; targetSeconds: number };
-export type Routine = { id: string; name: string; createdAt: string; updatedAt: string; tasks: Task[] };
-export type SessionRecord = {
-  id: string;
-  routineId: string;
-  dateISO: string;
-  startISO: string;
-  endISO: string;
-  targetSeconds: number;
-  actualSeconds: number;
-  deltaSeconds: number; // actual - target
-  tasksCompleted: number;
-  tasksTotal: number;
-};
+// Utils
+import { uid, fmt } from '@/libs/rituals-utils';
 
-// ---------- Utils ----------
-const uid = () => Math.random().toString(36).slice(2, 10);
-const fmt = (s: number) => {
-  const sign = s < 0 ? '-' : '';
-  const v = Math.abs(Math.trunc(s));
-  const m = Math.floor(v / 60);
-  const sec = v % 60;
-  return `${sign}${m}:${String(sec).padStart(2, '0')}`;
-};
+// API
+import { ritualsApi as api } from '@/libs/rituals-api';
 
-// API functions for database operations
-const api = {
-  async getRoutines(): Promise<Routine[]> {
-    try {
-      const response = await fetch('/api/routines');
-      if (!response.ok) throw new Error('Failed to fetch routines');
-      const data = await response.json();
-      return data.routines || [];
-    } catch (error) {
-      console.error('Error fetching routines:', error);
-      return [];
-    }
-  },
-
-  async saveRoutine(routine: Routine): Promise<Routine | null> {
-    try {
-      const response = await fetch('/api/routines', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(routine),
-      });
-      if (!response.ok) throw new Error('Failed to save routine');
-      const data = await response.json();
-      return data.routine;
-    } catch (error) {
-      console.error('Error saving routine:', error);
-      return null;
-    }
-  },
-
-  async updateRoutine(routine: Routine): Promise<Routine | null> {
-    try {
-      const response = await fetch('/api/routines', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(routine),
-      });
-      if (!response.ok) throw new Error('Failed to update routine');
-      const data = await response.json();
-      return data.routine;
-    } catch (error) {
-      console.error('Error updating routine:', error);
-      return null;
-    }
-  },
-
-  async deleteRoutine(id: string): Promise<boolean> {
-    try {
-      const response = await fetch(`/api/routines?id=${id}`, {
-        method: 'DELETE',
-      });
-      return response.ok;
-    } catch (error) {
-      console.error('Error deleting routine:', error);
-      return false;
-    }
-  },
-
-  async getSessions(): Promise<SessionRecord[]> {
-    try {
-      const response = await fetch('/api/routines/sessions');
-      if (!response.ok) throw new Error('Failed to fetch sessions');
-      const data = await response.json();
-      return data.sessions || [];
-    } catch (error) {
-      console.error('Error fetching sessions:', error);
-      return [];
-    }
-  },
-
-  async addSession(session: SessionRecord): Promise<SessionRecord | null> {
-    try {
-      const response = await fetch('/api/routines/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(session),
-      });
-      if (!response.ok) throw new Error('Failed to add session');
-      const data = await response.json();
-      return data.session;
-    } catch (error) {
-      console.error('Error adding session:', error);
-      return null;
-    }
-  },
-};
-
-// localStorage functions for migration
-const hasLS = () => {
-  try {
-    return typeof window !== 'undefined' && !!window.localStorage;
-  } catch {
-    return false;
-  }
-};
-
-const load = <T,>(k: string, fb: T): T => {
-  if (!hasLS()) return fb;
-  try {
-    const r = localStorage.getItem(k);
-    return r ? (JSON.parse(r) as T) : fb;
-  } catch {
-    return fb;
-  }
-};
-
-// Clear localStorage after migration
-const clearLocalStorage = () => {
-  if (!hasLS()) return;
-  try {
-    localStorage.removeItem('rk_routines');
-    localStorage.removeItem('rk_sessions');
-    localStorage.removeItem('rk_version');
-    localStorage.removeItem('rk_touched');
-    localStorage.setItem('rk_migrated', 'true');
-  } catch {}
-};
-
-const isMigrated = (): boolean => {
-  if (!hasLS()) return true;
-  try {
-    return localStorage.getItem('rk_migrated') === 'true';
-  } catch {
-    return true;
-  }
-};
-
-// ---------- Seed (from user-provided list) ----------
-const seed: Routine = {
-  id: uid(),
-  name: 'Morning Routine',
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  tasks: [
-    { id: uid(), title: 'Dream Log', targetSeconds: 120 },
-    { id: uid(), title: 'Put away earplugs and Make Bed, bring towel', targetSeconds: 300 },
-    { id: uid(), title: 'mouth guard, brush teeth, wash face, brush hair, sunblock, toilet', targetSeconds: 300 },
-    { id: uid(), title: 'Body Measurements & Video + Photo, Gym Attire', targetSeconds: 300 },
-    { id: uid(), title: 'Caffeine, Medicine, Supplements', targetSeconds: 180 },
-    { id: uid(), title: 'Tidy Up / Pack Gym bag', targetSeconds: 600 },
-    { id: uid(), title: 'walk + coffee FOOT ROTATION', targetSeconds: 1200 },
-    { id: uid(), title: 'Workout', targetSeconds: 3600 },
-    { id: uid(), title: 'Walk back', targetSeconds: 900 },
-    { id: uid(), title: 'Shower', targetSeconds: 900 },
-    { id: uid(), title: 'Meditate', targetSeconds: 900 },
-  ],
-};
-
-// ---------- Store (with database integration and migration) ----------
+// ---------- Store (with database integration) ----------
 const useStore = () => {
   const { data: session } = useSession();
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isMigrating, setIsMigrating] = useState(false);
 
   // Load data from database
   const loadFromDatabase = useCallback(async () => {
@@ -206,100 +29,10 @@ const useStore = () => {
 
       setRoutines(routinesData);
       setSessions(sessionsData);
-
-      // If no routines exist, create sample data
-      if (routinesData.length === 0) {
-        console.log('No routines found, creating sample data...');
-        const sampleRoutines = [
-          {
-            id: '1',
-            name: 'Morning Routine',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            tasks: [
-              { id: 'task1', title: 'Dream Log', targetSeconds: 120 },
-              { id: 'task2', title: 'Put away earplugs and Make Bed, bring towel', targetSeconds: 300 },
-              {
-                id: 'task3',
-                title: 'mouth guard, brush teeth, wash face, brush hair, sunblock, toilet',
-                targetSeconds: 300,
-              },
-              { id: 'task4', title: 'Body Measurements & Video + Photo, Gym Attire', targetSeconds: 300 },
-              { id: 'task5', title: 'Caffeine, Medicine, Supplements', targetSeconds: 180 },
-              { id: 'task6', title: 'Tidy Up / Pack Gym bag', targetSeconds: 600 },
-              { id: 'task7', title: 'walk + coffee FOOT ROTATION', targetSeconds: 1200 },
-              { id: 'task8', title: 'Workout', targetSeconds: 3600 },
-              { id: 'task9', title: 'Walk back', targetSeconds: 900 },
-              { id: 'task10', title: 'Shower', targetSeconds: 900 },
-              { id: 'task11', title: 'Meditate', targetSeconds: 900 },
-            ],
-          },
-          {
-            id: '2',
-            name: 'Exercise',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            tasks: [
-              { id: 'task12', title: 'Warm up', targetSeconds: 300 },
-              { id: 'task13', title: 'Main workout', targetSeconds: 1500 },
-              { id: 'task14', title: 'Cool down', targetSeconds: 300 },
-            ],
-          },
-          {
-            id: '3',
-            name: 'Reading',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            tasks: [
-              { id: 'task15', title: 'Choose material', targetSeconds: 60 },
-              { id: 'task16', title: 'Read actively', targetSeconds: 1140 },
-            ],
-          },
-        ];
-
-        // Create sample routines in database
-        for (const routine of sampleRoutines) {
-          await api.saveRoutine(routine);
-        }
-
-        setRoutines(sampleRoutines);
-      }
     } catch (error) {
       console.error('Error loading data from database:', error);
     } finally {
       setIsLoading(false);
-    }
-  }, [session?.user?.id]);
-
-  // Migrate data from localStorage to database
-  const migrateFromLocalStorage = useCallback(async () => {
-    if (!session?.user?.id || isMigrated()) return;
-
-    setIsMigrating(true);
-    try {
-      const localRoutines = load('rk_routines', []);
-      const localSessions = load('rk_sessions', []);
-
-      if (localRoutines.length > 0) {
-        console.log('Migrating routines from localStorage to database...');
-        for (const routine of localRoutines) {
-          await api.saveRoutine(routine);
-        }
-      }
-
-      if (localSessions.length > 0) {
-        console.log('Migrating sessions from localStorage to database...');
-        for (const session of localSessions) {
-          await api.addSession(session);
-        }
-      }
-
-      clearLocalStorage();
-      console.log('Migration completed');
-    } catch (error) {
-      console.error('Error during migration:', error);
-    } finally {
-      setIsMigrating(false);
     }
   }, [session?.user?.id]);
 
@@ -310,15 +43,8 @@ const useStore = () => {
       return;
     }
 
-    const initializeData = async () => {
-      // First, try to migrate from localStorage if needed
-      await migrateFromLocalStorage();
-      // Then load from database
-      await loadFromDatabase();
-    };
-
-    initializeData();
-  }, [session?.user?.id, migrateFromLocalStorage, loadFromDatabase]);
+    loadFromDatabase();
+  }, [session?.user?.id, loadFromDatabase]);
 
   // Save routine to database
   const saveRoutine = async (routine: Routine) => {
@@ -387,7 +113,6 @@ const useStore = () => {
     sessions,
     addSession,
     isLoading,
-    isMigrating,
   };
 };
 
@@ -835,25 +560,6 @@ const RoutineEditor: React.FC<{
         />
       </div>
 
-      {/* Template refresh helper (subtle, inline) */}
-      {draft.name === 'Morning Routine' && draft.tasks.length < seed.tasks.length && (
-        <div className="p-3 rounded-xl border bg-amber-50 text-sm flex items-center justify-between">
-          <span>New template available for this routine.</span>
-          <button
-            className="px-3 py-1 rounded-lg border bg-white"
-            onClick={() => {
-              const fresh = {
-                ...draft,
-                tasks: seed.tasks.map((t) => ({ id: uid(), title: t.title, targetSeconds: t.targetSeconds })),
-              };
-              onChange({ ...fresh, updatedAt: new Date().toISOString() });
-            }}
-          >
-            Use latest template
-          </button>
-        </div>
-      )}
-
       <div className="grid gap-2">
         {draft.tasks.map((t, i) => {
           const mins = Math.floor(t.targetSeconds / 60);
@@ -910,7 +616,7 @@ interface RitualsProps {
 }
 
 export default function Rituals({ initialMode = 'home', initialRitualId = null }: RitualsProps = {}) {
-  const { routines, setRoutines, sessions, addSession, isLoading, isMigrating } = useStore();
+  const { routines, setRoutines, sessions, addSession, isLoading } = useStore();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<'home' | 'view' | 'edit'>(initialMode === 'new' ? 'edit' : initialMode);
   const [activeId, setActiveId] = useState<string | null>(initialRitualId);
@@ -919,7 +625,7 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
 
   // Handle URL parameters when routines are loaded
   useEffect(() => {
-    if (isLoading || isMigrating) return;
+    if (isLoading) return;
 
     const urlMode = searchParams.get('mode');
     const urlRitual = searchParams.get('ritual');
@@ -942,7 +648,7 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
         console.log('No routine found with ID:', urlRitual);
       }
     }
-  }, [searchParams, routines, isLoading, isMigrating]);
+  }, [searchParams, routines, isLoading]);
   const openNew = () => {
     const routine: Routine = {
       id: uid(),
@@ -974,8 +680,8 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
     setDraft(null);
   };
 
-  // Show loading state while data is being loaded or migrated
-  if (isLoading || isMigrating) {
+  // Show loading state while data is being loaded
+  if (isLoading) {
     return (
       <div className="max-w-4xl mx-auto p-6 space-y-6">
         <header className="flex items-center justify-between">
@@ -984,9 +690,7 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">
-              {isMigrating ? 'Migrating your data to the cloud...' : 'Loading your routines...'}
-            </p>
+            <p className="text-gray-600">Loading your routines...</p>
           </div>
         </div>
       </div>
