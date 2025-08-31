@@ -5,7 +5,7 @@ import { DailyRitual } from '@/types';
 
 interface DailyProgressProps {
   rituals: DailyRitual[];
-  onCompleteRitual?: (id: string) => void;
+  onCompleteRitual?: (_ritualId: string) => void;
 }
 
 export default function DailyProgress({ rituals, onCompleteRitual }: DailyProgressProps) {

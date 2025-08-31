@@ -1,11 +1,12 @@
 /* eslint-disable no-empty */
 'use client';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 
 /**
  * Rituals — Google Keep-style routine cards + checklist with target time
- * Local-first with safe guards for sandboxed environments (localStorage may be blocked).
+ * Database-first with fallback to localStorage for migration.
  * This file is self-contained and compile-safe.
  *
  * Entities
@@ -40,7 +41,94 @@ const fmt = (s: number) => {
   return `${sign}${m}:${String(sec).padStart(2, '0')}`;
 };
 
-// localStorage guard
+// API functions for database operations
+const api = {
+  async getRoutines(): Promise<Routine[]> {
+    try {
+      const response = await fetch('/api/routines');
+      if (!response.ok) throw new Error('Failed to fetch routines');
+      const data = await response.json();
+      return data.routines || [];
+    } catch (error) {
+      console.error('Error fetching routines:', error);
+      return [];
+    }
+  },
+
+  async saveRoutine(routine: Routine): Promise<Routine | null> {
+    try {
+      const response = await fetch('/api/routines', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(routine),
+      });
+      if (!response.ok) throw new Error('Failed to save routine');
+      const data = await response.json();
+      return data.routine;
+    } catch (error) {
+      console.error('Error saving routine:', error);
+      return null;
+    }
+  },
+
+  async updateRoutine(routine: Routine): Promise<Routine | null> {
+    try {
+      const response = await fetch('/api/routines', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(routine),
+      });
+      if (!response.ok) throw new Error('Failed to update routine');
+      const data = await response.json();
+      return data.routine;
+    } catch (error) {
+      console.error('Error updating routine:', error);
+      return null;
+    }
+  },
+
+  async deleteRoutine(id: string): Promise<boolean> {
+    try {
+      const response = await fetch(`/api/routines?id=${id}`, {
+        method: 'DELETE',
+      });
+      return response.ok;
+    } catch (error) {
+      console.error('Error deleting routine:', error);
+      return false;
+    }
+  },
+
+  async getSessions(): Promise<SessionRecord[]> {
+    try {
+      const response = await fetch('/api/routines/sessions');
+      if (!response.ok) throw new Error('Failed to fetch sessions');
+      const data = await response.json();
+      return data.sessions || [];
+    } catch (error) {
+      console.error('Error fetching sessions:', error);
+      return [];
+    }
+  },
+
+  async addSession(session: SessionRecord): Promise<SessionRecord | null> {
+    try {
+      const response = await fetch('/api/routines/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(session),
+      });
+      if (!response.ok) throw new Error('Failed to add session');
+      const data = await response.json();
+      return data.session;
+    } catch (error) {
+      console.error('Error adding session:', error);
+      return null;
+    }
+  },
+};
+
+// localStorage functions for migration
 const hasLS = () => {
   try {
     return typeof window !== 'undefined' && !!window.localStorage;
@@ -48,13 +136,7 @@ const hasLS = () => {
     return false;
   }
 };
-const save = (k: string, v: any) => {
-  if (hasLS()) {
-    try {
-      localStorage.setItem(k, JSON.stringify(v));
-    } catch {}
-  }
-};
+
 const load = <T,>(k: string, fb: T): T => {
   if (!hasLS()) return fb;
   try {
@@ -65,34 +147,24 @@ const load = <T,>(k: string, fb: T): T => {
   }
 };
 
-// Versioning + touched flag (better UX; no big reset button)
-const STORAGE_VERSION = 'rk_v3'; // bump when seed/schema changes
-const setVersion = () => {
-  if (hasLS())
-    try {
-      localStorage.setItem('rk_version', STORAGE_VERSION);
-    } catch {}
-};
-const getVersion = (): string | null => {
-  if (!hasLS()) return null;
+// Clear localStorage after migration
+const clearLocalStorage = () => {
+  if (!hasLS()) return;
   try {
-    return localStorage.getItem('rk_version');
-  } catch {
-    return null;
-  }
+    localStorage.removeItem('rk_routines');
+    localStorage.removeItem('rk_sessions');
+    localStorage.removeItem('rk_version');
+    localStorage.removeItem('rk_touched');
+    localStorage.setItem('rk_migrated', 'true');
+  } catch {}
 };
-const setTouched = () => {
-  if (hasLS())
-    try {
-      localStorage.setItem('rk_touched', '1');
-    } catch {}
-};
-const getTouched = (): boolean => {
-  if (!hasLS()) return false;
+
+const isMigrated = (): boolean => {
+  if (!hasLS()) return true;
   try {
-    return localStorage.getItem('rk_touched') === '1';
+    return localStorage.getItem('rk_migrated') === 'true';
   } catch {
-    return false;
+    return true;
   }
 };
 
@@ -117,58 +189,210 @@ const seed: Routine = {
   ],
 };
 
-// ---------- Store (with silent migration) ----------
+// ---------- Store (with database integration and migration) ----------
 const useStore = () => {
-  // Load persisted data first
-  let initialRoutines = load('rk_routines', [seed]);
-  let initialSessions = load('rk_sessions', []);
+  const { data: session } = useSession();
+  const [routines, setRoutines] = useState<Routine[]>([]);
+  const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isMigrating, setIsMigrating] = useState(false);
 
-  // If version changed and user hasn't touched, upgrade to seed silently
-  const storedVer = getVersion();
-  if (storedVer !== STORAGE_VERSION && !getTouched()) {
-    initialRoutines = [seed];
-    initialSessions = [];
-    setVersion();
-    if (hasLS()) {
-      try {
-        localStorage.setItem('rk_routines', JSON.stringify(initialRoutines));
-        localStorage.setItem('rk_sessions', JSON.stringify(initialSessions));
-      } catch {}
+  // Load data from database
+  const loadFromDatabase = useCallback(async () => {
+    if (!session?.user?.id) return;
+
+    try {
+      const [routinesData, sessionsData] = await Promise.all([api.getRoutines(), api.getSessions()]);
+
+      setRoutines(routinesData);
+      setSessions(sessionsData);
+
+      // If no routines exist, create sample data
+      if (routinesData.length === 0) {
+        console.log('No routines found, creating sample data...');
+        const sampleRoutines = [
+          {
+            id: '1',
+            name: 'Morning Routine',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            tasks: [
+              { id: 'task1', title: 'Dream Log', targetSeconds: 120 },
+              { id: 'task2', title: 'Put away earplugs and Make Bed, bring towel', targetSeconds: 300 },
+              {
+                id: 'task3',
+                title: 'mouth guard, brush teeth, wash face, brush hair, sunblock, toilet',
+                targetSeconds: 300,
+              },
+              { id: 'task4', title: 'Body Measurements & Video + Photo, Gym Attire', targetSeconds: 300 },
+              { id: 'task5', title: 'Caffeine, Medicine, Supplements', targetSeconds: 180 },
+              { id: 'task6', title: 'Tidy Up / Pack Gym bag', targetSeconds: 600 },
+              { id: 'task7', title: 'walk + coffee FOOT ROTATION', targetSeconds: 1200 },
+              { id: 'task8', title: 'Workout', targetSeconds: 3600 },
+              { id: 'task9', title: 'Walk back', targetSeconds: 900 },
+              { id: 'task10', title: 'Shower', targetSeconds: 900 },
+              { id: 'task11', title: 'Meditate', targetSeconds: 900 },
+            ],
+          },
+          {
+            id: '2',
+            name: 'Exercise',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            tasks: [
+              { id: 'task12', title: 'Warm up', targetSeconds: 300 },
+              { id: 'task13', title: 'Main workout', targetSeconds: 1500 },
+              { id: 'task14', title: 'Cool down', targetSeconds: 300 },
+            ],
+          },
+          {
+            id: '3',
+            name: 'Reading',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            tasks: [
+              { id: 'task15', title: 'Choose material', targetSeconds: 60 },
+              { id: 'task16', title: 'Read actively', targetSeconds: 1140 },
+            ],
+          },
+        ];
+
+        // Create sample routines in database
+        for (const routine of sampleRoutines) {
+          await api.saveRoutine(routine);
+        }
+
+        setRoutines(sampleRoutines);
+      }
+    } catch (error) {
+      console.error('Error loading data from database:', error);
+    } finally {
+      setIsLoading(false);
     }
-  } else if (storedVer !== STORAGE_VERSION) {
-    // If user already customized, keep their data; just bump version
-    setVersion();
-  }
+  }, [session?.user?.id]);
 
-  const [routines, setRoutines] = useState<Routine[]>(initialRoutines);
-  const [sessions, setSessions] = useState<SessionRecord[]>(initialSessions);
+  // Migrate data from localStorage to database
+  const migrateFromLocalStorage = useCallback(async () => {
+    if (!session?.user?.id || isMigrated()) return;
 
-  useEffect(() => save('rk_routines', routines), [routines]);
-  useEffect(() => save('rk_sessions', sessions), [sessions]);
+    setIsMigrating(true);
+    try {
+      const localRoutines = load('rk_routines', []);
+      const localSessions = load('rk_sessions', []);
 
-  const addSession = (s: SessionRecord) => {
-    setSessions((arr) => [s, ...arr]);
-    setTouched();
+      if (localRoutines.length > 0) {
+        console.log('Migrating routines from localStorage to database...');
+        for (const routine of localRoutines) {
+          await api.saveRoutine(routine);
+        }
+      }
+
+      if (localSessions.length > 0) {
+        console.log('Migrating sessions from localStorage to database...');
+        for (const session of localSessions) {
+          await api.addSession(session);
+        }
+      }
+
+      clearLocalStorage();
+      console.log('Migration completed');
+    } catch (error) {
+      console.error('Error during migration:', error);
+    } finally {
+      setIsMigrating(false);
+    }
+  }, [session?.user?.id]);
+
+  // Initialize data
+  useEffect(() => {
+    if (!session?.user?.id) {
+      setIsLoading(false);
+      return;
+    }
+
+    const initializeData = async () => {
+      // First, try to migrate from localStorage if needed
+      await migrateFromLocalStorage();
+      // Then load from database
+      await loadFromDatabase();
+    };
+
+    initializeData();
+  }, [session?.user?.id, migrateFromLocalStorage, loadFromDatabase]);
+
+  // Save routine to database
+  const saveRoutine = async (routine: Routine) => {
+    try {
+      const savedRoutine = await api.saveRoutine(routine);
+      if (savedRoutine) {
+        setRoutines((prev) => {
+          const exists = prev.some((r) => r.id === routine.id);
+          return exists ? prev.map((r) => (r.id === routine.id ? savedRoutine : r)) : [...prev, savedRoutine];
+        });
+      }
+    } catch (error) {
+      console.error('Error saving routine:', error);
+    }
   };
 
-  // Dev helper (not shown in UI)
-  const resetToSeed = () => {
-    setRoutines([seed]);
-    setSessions([]);
-    setVersion();
-    if (hasLS()) {
-      try {
-        localStorage.setItem('rk_routines', JSON.stringify([seed]));
-        localStorage.setItem('rk_sessions', JSON.stringify([]));
-        localStorage.removeItem('rk_touched');
-      } catch {}
+  // Update routine in database
+  const updateRoutine = async (routine: Routine) => {
+    try {
+      const updatedRoutine = await api.updateRoutine(routine);
+      if (updatedRoutine) {
+        setRoutines((prev) => prev.map((r) => (r.id === routine.id ? updatedRoutine : r)));
+      }
+    } catch (error) {
+      console.error('Error updating routine:', error);
     }
   };
-  return { routines, setRoutines, sessions, addSession, resetToSeed };
+
+  const addSession = async (sessionRecord: SessionRecord) => {
+    try {
+      const savedSession = await api.addSession(sessionRecord);
+      if (savedSession) {
+        setSessions((prev) => [savedSession, ...prev]);
+      }
+    } catch (error) {
+      console.error('Error saving session:', error);
+    }
+  };
+
+  const setRoutinesWrapper = (updater: React.SetStateAction<Routine[]>) => {
+    setRoutines((prev) => {
+      const newRoutines = typeof updater === 'function' ? updater(prev) : updater;
+
+      // Auto-save changes to database
+      if (session?.user?.id) {
+        // Find changed routines and save them
+        newRoutines.forEach(async (routine) => {
+          const existingRoutine = prev.find((r) => r.id === routine.id);
+          if (!existingRoutine) {
+            // New routine
+            await saveRoutine(routine);
+          } else if (JSON.stringify(existingRoutine) !== JSON.stringify(routine)) {
+            // Updated routine
+            await updateRoutine(routine);
+          }
+        });
+      }
+
+      return newRoutines;
+    });
+  };
+
+  return {
+    routines,
+    setRoutines: setRoutinesWrapper,
+    sessions,
+    addSession,
+    isLoading,
+    isMigrating,
+  };
 };
 
 // ---------- Small UI bits ----------
-const NumberInput: React.FC<{ value: number; onChange: (val: number) => void; className?: string }> = ({
+const NumberInput: React.FC<{ value: number; onChange: (_newValue: number) => void; className?: string }> = ({
   value,
   onChange,
   className,
@@ -223,7 +447,7 @@ const RoutineView: React.FC<{
   onEdit: () => void;
   onClose: () => void;
   sessions: SessionRecord[];
-  onRecord: (session: SessionRecord) => void;
+  onRecord: (_newSession: SessionRecord) => void;
 }> = ({ routine, onEdit, onClose, sessions, onRecord }) => {
   const [running, setRunning] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -562,7 +786,7 @@ const RoutineView: React.FC<{
 // ---------- Editor with Drag & Drop ----------
 const RoutineEditor: React.FC<{
   draft: Routine;
-  onChange: (routine: Routine) => void;
+  onChange: (_updatedRoutine: Routine) => void;
   onSave: () => void;
   onClose: () => void;
 }> = ({ draft, onChange, onSave, onClose }) => {
@@ -686,119 +910,39 @@ interface RitualsProps {
 }
 
 export default function Rituals({ initialMode = 'home', initialRitualId = null }: RitualsProps = {}) {
-  const { routines, setRoutines, sessions, addSession } = useStore();
+  const { routines, setRoutines, sessions, addSession, isLoading, isMigrating } = useStore();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<'home' | 'view' | 'edit'>(initialMode === 'new' ? 'edit' : initialMode);
   const [activeId, setActiveId] = useState<string | null>(initialRitualId);
   const active = routines.find((r) => r.id === activeId) || null;
   const [draft, setDraft] = useState<Routine | null>(null);
 
-  // Initialize sample data if empty and handle URL parameters
+  // Handle URL parameters when routines are loaded
   useEffect(() => {
-    // Check if we have routines but none with the expected IDs from dashboard
-    const hasExpectedIds = routines.some((r) => ['1', '2', '3'].includes(r.id));
+    if (isLoading || isMigrating) return;
 
-    if (routines.length === 0 || !hasExpectedIds) {
-      // Clear existing data and create sample data with expected IDs
-      const sampleRoutines = [
-        {
-          id: '1',
-          name: 'Morning Routine',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [
-            { id: 'task1', title: 'Dream Log', targetSeconds: 120 },
-            { id: 'task2', title: 'Put away earplugs and Make Bed, bring towel', targetSeconds: 300 },
-            {
-              id: 'task3',
-              title: 'mouth guard, brush teeth, wash face, brush hair, sunblock, toilet',
-              targetSeconds: 300,
-            },
-            { id: 'task4', title: 'Body Measurements & Video + Photo, Gym Attire', targetSeconds: 300 },
-            { id: 'task5', title: 'Caffeine, Medicine, Supplements', targetSeconds: 180 },
-            { id: 'task6', title: 'Tidy Up / Pack Gym bag', targetSeconds: 600 },
-            { id: 'task7', title: 'walk + coffee FOOT ROTATION', targetSeconds: 1200 },
-            { id: 'task8', title: 'Workout', targetSeconds: 3600 },
-            { id: 'task9', title: 'Walk back', targetSeconds: 900 },
-            { id: 'task10', title: 'Shower', targetSeconds: 900 },
-            { id: 'task11', title: 'Meditate', targetSeconds: 900 },
-          ],
-        },
-        {
-          id: '2',
-          name: 'Exercise',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [
-            { id: 'task12', title: 'Warm up', targetSeconds: 300 },
-            { id: 'task13', title: 'Main workout', targetSeconds: 1500 },
-            { id: 'task14', title: 'Cool down', targetSeconds: 300 },
-          ],
-        },
-        {
-          id: '3',
-          name: 'Reading',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [
-            { id: 'task15', title: 'Choose material', targetSeconds: 60 },
-            { id: 'task16', title: 'Read actively', targetSeconds: 1140 },
-          ],
-        },
-      ];
+    const urlMode = searchParams.get('mode');
+    const urlRitual = searchParams.get('ritual');
 
-      console.log('Setting up sample routines with expected IDs:', sampleRoutines);
-      setRoutines(sampleRoutines);
+    console.log('URL params:', { urlMode, urlRitual });
+    console.log('Available routines:', routines);
 
-      // After setting routines, handle URL parameters
-      setTimeout(() => {
-        const urlMode = searchParams.get('mode');
-        const urlRitual = searchParams.get('ritual');
-
-        console.log('URL params:', { urlMode, urlRitual });
-        console.log('New sample routines:', sampleRoutines);
-
-        if (urlMode === 'new') {
-          openNew();
-        } else if (urlRitual) {
-          const routine = sampleRoutines.find((r) => r.id === urlRitual);
-          console.log('Found routine:', routine);
-          if (routine) {
-            if (urlMode === 'edit') {
-              openEdit(routine);
-            } else {
-              openView(routine);
-            }
-          } else {
-            console.log('No routine found with ID:', urlRitual);
-          }
-        }
-      }, 0);
-    } else {
-      // If routines already exist with expected IDs, handle URL parameters normally
-      const urlMode = searchParams.get('mode');
-      const urlRitual = searchParams.get('ritual');
-
-      console.log('URL params:', { urlMode, urlRitual });
-      console.log('Available routines:', routines);
-
-      if (urlMode === 'new') {
-        openNew();
-      } else if (urlRitual) {
-        const routine = routines.find((r) => r.id === urlRitual);
-        console.log('Found routine:', routine);
-        if (routine) {
-          if (urlMode === 'edit') {
-            openEdit(routine);
-          } else {
-            openView(routine);
-          }
+    if (urlMode === 'new') {
+      openNew();
+    } else if (urlRitual) {
+      const routine = routines.find((r) => r.id === urlRitual);
+      console.log('Found routine:', routine);
+      if (routine) {
+        if (urlMode === 'edit') {
+          openEdit(routine);
         } else {
-          console.log('No routine found with ID:', urlRitual);
+          openView(routine);
         }
+      } else {
+        console.log('No routine found with ID:', urlRitual);
       }
     }
-  }, [searchParams, routines, setRoutines]);
+  }, [searchParams, routines, isLoading, isMigrating]);
   const openNew = () => {
     const routine: Routine = {
       id: uid(),
@@ -825,11 +969,29 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
       const exists = rs.some((x) => x.id === draft.id);
       return exists ? rs.map((x) => (x.id === draft.id ? draft : x)) : [draft, ...rs];
     });
-    setTouched();
     setMode('view');
     setActiveId(draft.id);
     setDraft(null);
   };
+
+  // Show loading state while data is being loaded or migrated
+  if (isLoading || isMigrating) {
+    return (
+      <div className="max-w-4xl mx-auto p-6 space-y-6">
+        <header className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Rituals</h1>
+        </header>
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">
+              {isMigrating ? 'Migrating your data to the cloud...' : 'Loading your routines...'}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
