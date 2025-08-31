@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectMongo from '@/libs/mongoose';
 import Routine from '@/models/Routine';
 
-export async function DELETE(req: NextRequest) {
+export async function DELETE(_req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) {

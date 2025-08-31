@@ -28,13 +28,9 @@ interface DailyRitual {
 // Function to fetch real data from the rituals API
 const fetchRealData = async () => {
   try {
-    const [routinesResponse, sessionsResponse] = await Promise.all([
-      fetch('/api/routines'),
-      fetch('/api/routines/sessions'),
-    ]);
+    const routinesResponse = await fetch('/api/routines');
 
     const routinesData = routinesResponse.ok ? (await routinesResponse.json()).routines : [];
-    const sessionsData = sessionsResponse.ok ? (await sessionsResponse.json()).sessions : [];
 
     // Transform routines into dashboard format
     const dailyRituals: DailyRitual[] = routinesData.map((routine: any) => ({

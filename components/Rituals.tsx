@@ -657,7 +657,7 @@ interface RitualsProps {
 }
 
 export default function Rituals({ initialMode = 'home', initialRitualId = null }: RitualsProps = {}) {
-  const { routines, setRoutines, sessions, addSession, deleteRoutine, loadFromDatabase, isLoading } = useStore();
+  const { routines, setRoutines, sessions, addSession, deleteRoutine, isLoading } = useStore();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<'home' | 'view' | 'edit'>(initialMode === 'new' ? 'edit' : initialMode);
   const [activeId, setActiveId] = useState<string | null>(initialRitualId);
