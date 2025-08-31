@@ -22,11 +22,16 @@ const useStore = () => {
 
   // Load data from database
   const loadFromDatabase = useCallback(async () => {
+    console.log('LoadFromDatabase called, session user ID:', session?.user?.id);
     if (!session?.user?.id) return;
 
     try {
       const [routinesData, sessionsData] = await Promise.all([api.getRoutines(), api.getSessions()]);
 
+      console.log(
+        'Loaded routines from database:',
+        routinesData.map((r) => ({ id: r.id, name: r.name }))
+      );
       setRoutines(routinesData);
       setSessions(sessionsData);
     } catch (error) {
@@ -73,6 +78,38 @@ const useStore = () => {
     }
   };
 
+  // Delete routine from database
+  const deleteRoutine = async (id: string) => {
+    console.log('DeleteRoutine called with ID:', id);
+    console.log(
+      'Current routines before delete:',
+      routines.map((r) => ({ id: r.id, name: r.name }))
+    );
+
+    try {
+      const success = await api.deleteRoutine(id);
+      console.log('Delete API response success:', success);
+
+      if (success) {
+        setRoutines((prev) => prev.filter((r) => r.id !== id));
+        console.log('Routine deleted successfully from local state');
+      } else {
+        // If delete failed, refresh data to sync with database
+        console.log('Delete failed, refreshing data from database...');
+        await loadFromDatabase();
+        console.log('Refresh completed');
+      }
+      return success;
+    } catch (error) {
+      console.error('Error deleting routine:', error);
+      // On error, also refresh data to sync with database
+      console.log('Delete error occurred, refreshing data from database...');
+      await loadFromDatabase();
+      console.log('Refresh after error completed');
+      return false;
+    }
+  };
+
   const addSession = async (sessionRecord: SessionRecord) => {
     try {
       const savedSession = await api.addSession(sessionRecord);
@@ -112,6 +149,8 @@ const useStore = () => {
     setRoutines: setRoutinesWrapper,
     sessions,
     addSession,
+    deleteRoutine,
+    loadFromDatabase,
     isLoading,
   };
 };
@@ -171,9 +210,10 @@ const RoutineView: React.FC<{
   routine: Routine;
   onEdit: () => void;
   onClose: () => void;
+  onDelete: () => void;
   sessions: SessionRecord[];
   onRecord: (_newSession: SessionRecord) => void;
-}> = ({ routine, onEdit, onClose, sessions, onRecord }) => {
+}> = ({ routine, onEdit, onClose, onDelete, sessions, onRecord }) => {
   const [running, setRunning] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState<number | null>(null);
@@ -185,6 +225,13 @@ const RoutineView: React.FC<{
   const [showHistory, setShowHistory] = useState(false);
   const timerRef = useRef<number | null>(null);
   const [startedAt, setStartedAt] = useState<string | null>(null);
+
+  const handleDelete = () => {
+    if (confirm(`Are you sure you want to delete "${routine.name}"? This action cannot be undone.`)) {
+      onDelete();
+      onClose(); // Close the view after deleting
+    }
+  };
 
   // Tick
   useEffect(() => {
@@ -383,6 +430,12 @@ const RoutineView: React.FC<{
         </button>
         <button className="px-4 py-2 rounded-xl border" onClick={onEdit}>
           ✏️ Edit
+        </button>
+        <button
+          className="px-4 py-2 rounded-xl border border-red-300 text-red-600 hover:bg-red-50"
+          onClick={handleDelete}
+        >
+          🗑️ Delete
         </button>
         <button className="px-4 py-2 rounded-xl border" onClick={onClose}>
           ✖️ Close
@@ -616,40 +669,14 @@ interface RitualsProps {
 }
 
 export default function Rituals({ initialMode = 'home', initialRitualId = null }: RitualsProps = {}) {
-  const { routines, setRoutines, sessions, addSession, isLoading } = useStore();
+  const { routines, setRoutines, sessions, addSession, deleteRoutine, loadFromDatabase, isLoading } = useStore();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<'home' | 'view' | 'edit'>(initialMode === 'new' ? 'edit' : initialMode);
   const [activeId, setActiveId] = useState<string | null>(initialRitualId);
   const active = routines.find((r) => r.id === activeId) || null;
   const [draft, setDraft] = useState<Routine | null>(null);
 
-  // Handle URL parameters when routines are loaded
-  useEffect(() => {
-    if (isLoading) return;
-
-    const urlMode = searchParams.get('mode');
-    const urlRitual = searchParams.get('ritual');
-
-    console.log('URL params:', { urlMode, urlRitual });
-    console.log('Available routines:', routines);
-
-    if (urlMode === 'new') {
-      openNew();
-    } else if (urlRitual) {
-      const routine = routines.find((r) => r.id === urlRitual);
-      console.log('Found routine:', routine);
-      if (routine) {
-        if (urlMode === 'edit') {
-          openEdit(routine);
-        } else {
-          openView(routine);
-        }
-      } else {
-        console.log('No routine found with ID:', urlRitual);
-      }
-    }
-  }, [searchParams, routines, isLoading]);
-  const openNew = () => {
+  const openNew = useCallback(() => {
     const routine: Routine = {
       id: uid(),
       name: 'New routine',
@@ -659,15 +686,43 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
     };
     setDraft(routine);
     setMode('edit');
-  };
-  const openView = (r: Routine) => {
+  }, []);
+
+  const openView = useCallback((r: Routine) => {
     setActiveId(r.id);
     setMode('view');
-  };
-  const openEdit = (r: Routine) => {
+  }, []);
+
+  const openEdit = useCallback((r: Routine) => {
     setDraft(JSON.parse(JSON.stringify(r)));
     setMode('edit');
-  };
+  }, []);
+
+  // Handle URL parameters when routines are loaded
+  useEffect(() => {
+    const urlMode = searchParams.get('mode');
+    const urlRitual = searchParams.get('ritual');
+
+    // Handle 'new' mode regardless of loading state or authentication
+    if (urlMode === 'new') {
+      openNew();
+      return;
+    }
+
+    // For other modes, wait until loading is complete
+    if (isLoading) return;
+
+    if (urlRitual) {
+      const routine = routines.find((r) => r.id === urlRitual);
+      if (routine) {
+        if (urlMode === 'edit') {
+          openEdit(routine);
+        } else {
+          openView(routine);
+        }
+      }
+    }
+  }, [searchParams, routines, isLoading, openNew, openEdit, openView]);
 
   const saveDraft = () => {
     if (!draft) return;
@@ -705,7 +760,15 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
 
       {mode === 'home' && (
         <div className="space-y-4">
-          <h2 className="text-sm text-gray-600">Your routines</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm text-gray-600">Your routines</h2>
+            <button
+              onClick={loadFromDatabase}
+              className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border"
+            >
+              Refresh
+            </button>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             {routines.map((r, idx) => (
               <RoutineCard key={r.id} routine={r} index={idx} onOpen={() => openView(r)} />
@@ -730,6 +793,7 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
             setMode('home');
             setActiveId(null);
           }}
+          onDelete={() => deleteRoutine(active.id)}
           sessions={sessions}
           onRecord={addSession}
         />

@@ -5,9 +5,21 @@ import type { Routine, SessionRecord } from '@/types/rituals';
 export const ritualsApi = {
   async getRoutines(): Promise<Routine[]> {
     try {
-      const response = await fetch('/api/routines');
+      // Add cache-busting timestamp to prevent browser caching
+      const timestamp = new Date().getTime();
+      const response = await fetch(`/api/routines?_t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
       if (!response.ok) throw new Error('Failed to fetch routines');
       const data = await response.json();
+      console.log('Raw API response from /api/routines:', data);
+      console.log(
+        'Routines array from response:',
+        data.routines?.map((r: any) => ({ id: r.id, name: r.name }))
+      );
       return data.routines || [];
     } catch (error) {
       console.error('Error fetching routines:', error);

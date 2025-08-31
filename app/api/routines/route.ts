@@ -2,6 +2,7 @@ import { auth } from '@/libs/next-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import connectMongo from '@/libs/mongoose';
 import Routine from '@/models/Routine';
+import mongoose from 'mongoose';
 
 export async function GET() {
   try {
@@ -13,11 +14,22 @@ export async function GET() {
     await connectMongo();
 
     const routines = await Routine.find({
-      userId: session.user.id,
+      userId: new mongoose.Types.ObjectId(session.user.id),
       isActive: true,
     }).sort({ createdAt: -1 });
 
-    return NextResponse.json({ routines });
+    console.log(
+      'GET /api/routines - returning routines:',
+      routines.map((r) => ({ id: r.id, name: r.name }))
+    );
+
+    const response = NextResponse.json({ routines });
+    // Add cache-busting headers
+    response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+
+    return response;
   } catch (error) {
     console.error('Error fetching routines:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -42,7 +54,7 @@ export async function POST(req: NextRequest) {
 
     // Check if routine with this ID already exists for this user
     const existingRoutine = await Routine.findOne({
-      userId: session.user.id,
+      userId: new mongoose.Types.ObjectId(session.user.id),
       id: id,
     });
 
@@ -55,7 +67,7 @@ export async function POST(req: NextRequest) {
     } else {
       // Create new routine
       const routine = new Routine({
-        userId: session.user.id,
+        userId: new mongoose.Types.ObjectId(session.user.id),
         id,
         name,
         tasks,
@@ -95,14 +107,14 @@ export async function PUT(req: NextRequest) {
     await connectMongo();
 
     // First, let's see what routines exist for this user
-    const allUserRoutines = await Routine.find({ userId: session.user.id });
+    const allUserRoutines = await Routine.find({ userId: new mongoose.Types.ObjectId(session.user.id) });
     console.log(
       'User has routines:',
       allUserRoutines.map((r) => ({ id: r.id, name: r.name }))
     );
 
     const routine = await Routine.findOne({
-      userId: session.user.id,
+      userId: new mongoose.Types.ObjectId(session.user.id),
       id: id,
     });
 
@@ -139,10 +151,17 @@ export async function DELETE(req: NextRequest) {
 
     await connectMongo();
 
+    console.log('DELETE request - User ID:', session.user.id, 'Routine ID:', id);
+
     const routine = await Routine.findOne({
-      userId: session.user.id,
+      userId: new mongoose.Types.ObjectId(session.user.id),
       id: id,
     });
+
+    console.log(
+      'Found routine for deletion:',
+      routine ? { id: routine.id, name: routine.name, isActive: routine.isActive } : 'null'
+    );
 
     if (!routine) {
       return NextResponse.json({ error: 'Routine not found' }, { status: 404 });
