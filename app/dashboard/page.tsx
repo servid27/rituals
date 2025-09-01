@@ -25,48 +25,47 @@ interface DailyRitual {
   };
 }
 
-// Mock data for now - replace with API call later
-const getMockData = () => {
-  return {
-    stats: {
-      totalRituals: 3,
-      completedToday: 1,
-      currentStreak: 7,
-      longestStreak: 15,
-    },
-    dailyRituals: [
-      {
-        _id: '1',
-        title: 'Morning Meditation',
-        description: 'Start the day with mindfulness',
-        category: 'mindfulness',
-        targetTime: '07:00',
-        estimatedDuration: 15,
-        isCompleted: true,
-        stats: { currentStreak: 7 },
+// Function to fetch real data from the rituals API
+const fetchRealData = async () => {
+  try {
+    const routinesResponse = await fetch('/api/routines');
+
+    const routinesData = routinesResponse.ok ? (await routinesResponse.json()).routines : [];
+
+    // Transform routines into dashboard format
+    const dailyRituals: DailyRitual[] = routinesData.map((routine: any) => ({
+      _id: routine.id,
+      title: routine.name,
+      description: `${routine.tasks.length} tasks`,
+      category: 'other', // Default category, could be enhanced
+      targetTime: '', // Could calculate from tasks
+      estimatedDuration: Math.round(routine.tasks.reduce((sum: number, task: any) => sum + task.targetSeconds, 0) / 60),
+      isCompleted: false, // Would need to check today's sessions
+      stats: { currentStreak: 0 }, // Would calculate from sessions
+    }));
+
+    // Calculate stats
+    const stats = {
+      totalRituals: routinesData.length,
+      completedToday: 0, // Would calculate from today's sessions
+      currentStreak: 0, // Would calculate from sessions
+      longestStreak: 0, // Would calculate from sessions
+    };
+
+    return { stats, dailyRituals };
+  } catch (error) {
+    console.error('Error fetching real data:', error);
+    // Fallback to empty data
+    return {
+      stats: {
+        totalRituals: 0,
+        completedToday: 0,
+        currentStreak: 0,
+        longestStreak: 0,
       },
-      {
-        _id: '2',
-        title: 'Exercise',
-        description: 'Daily workout routine',
-        category: 'health',
-        targetTime: '08:00',
-        estimatedDuration: 30,
-        isCompleted: false,
-        stats: { currentStreak: 5 },
-      },
-      {
-        _id: '3',
-        title: 'Reading',
-        description: 'Read for 20 minutes',
-        category: 'learning',
-        targetTime: '21:00',
-        estimatedDuration: 20,
-        isCompleted: false,
-        stats: { currentStreak: 3 },
-      },
-    ],
-  };
+      dailyRituals: [],
+    };
+  }
 };
 
 export default function Dashboard() {
@@ -106,8 +105,13 @@ export default function Dashboard() {
       return;
     }
 
-    // For now, use mock data
-    setData(getMockData());
+    // Fetch real data from the API
+    const loadData = async () => {
+      const realData = await fetchRealData();
+      setData(realData);
+    };
+
+    loadData();
   }, [session, status, router]);
 
   if (status === 'loading') {
@@ -294,36 +298,44 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="mt-3 text-xs text-gray-600 text-center">Morning Routine completed</div>
+            <div className="mt-3 text-xs text-gray-600 text-center">
+              {stats.completedToday} of {stats.totalRituals} rituals completed
+            </div>
           </div>
 
           {/* Time Spent Chart */}
           <div className="p-6 rounded-2xl bg-gradient-to-br from-rose-50 to-pink-50 border transition-all duration-300 hover:shadow-lg hover:shadow-rose-200/50 hover:-translate-y-1">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-800">Time Distribution</h3>
-              <span className="text-xs text-rose-600 bg-rose-100 px-2 py-1 rounded-full">2.5h today</span>
+              <span className="text-xs text-rose-600 bg-rose-100 px-2 py-1 rounded-full">
+                {Math.round((dailyRituals.reduce((sum, r) => sum + r.estimatedDuration, 0) / 60) * 10) / 10}h planned
+              </span>
             </div>
             <div className="space-y-3">
-              {[
-                { name: 'Morning Routine', time: '1h 30m', percent: 60, color: 'bg-rose-400' },
-                { name: 'Exercise', time: '45m', percent: 30, color: 'bg-rose-300' },
-                { name: 'Reading', time: '15m', percent: 10, color: 'bg-rose-200' },
-              ].map((item, i) => (
-                <div key={i} className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-700">{item.name}</span>
-                    <span className="text-gray-500">{item.time}</span>
+              {dailyRituals.slice(0, 3).map((ritual, i) => {
+                const colors = ['bg-rose-400', 'bg-rose-300', 'bg-rose-200'];
+                const totalDuration = dailyRituals.reduce((sum, r) => sum + r.estimatedDuration, 0);
+                const percent = totalDuration > 0 ? Math.round((ritual.estimatedDuration / totalDuration) * 100) : 0;
+
+                return (
+                  <div key={i} className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-700">{ritual.title}</span>
+                      <span className="text-gray-500">{ritual.estimatedDuration}m</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className={`${colors[i] || 'bg-rose-200'} h-2 rounded-full transition-all duration-1000`}
+                        style={{ width: `${percent}%` }}
+                      ></div>
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className={`${item.color} h-2 rounded-full transition-all duration-1000`}
-                      style={{ width: `${item.percent}%` }}
-                    ></div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-            <div className="mt-3 text-xs text-gray-600">Most productive: 7-9 AM</div>
+            <div className="mt-3 text-xs text-gray-600">
+              {dailyRituals.length > 0 ? `${dailyRituals.length} rituals planned` : 'No rituals yet'}
+            </div>
           </div>
         </div>
       </div>

@@ -24,7 +24,8 @@ const toJSON = <T extends Document>(schema: Schema<T>) => {
         }
       });
 
-      if (ret._id) {
+      // Only set id from _id if there's no existing id field
+      if (ret._id && !ret.id) {
         ret.id = ret._id.toString();
       }
       delete ret._id;

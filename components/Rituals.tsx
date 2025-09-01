@@ -1,174 +1,150 @@
 /* eslint-disable no-empty */
 'use client';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 
-/**
- * Rituals — Google Keep-style routine cards + checklist with target time
- * Local-first with safe guards for sandboxed environments (localStorage may be blocked).
- * This file is self-contained and compile-safe.
- *
- * Entities
- *  - Task:        { id, title, targetSeconds }
- *  - Routine:     { id, name, createdAt, updatedAt, tasks }
- *  - SessionRecord: summary written to history when you Finish
- */
+// Types
+import type { Task, Routine, SessionRecord } from '@/types/rituals';
 
-// ---------- Types ----------
-export type Task = { id: string; title: string; targetSeconds: number };
-export type Routine = { id: string; name: string; createdAt: string; updatedAt: string; tasks: Task[] };
-export type SessionRecord = {
-  id: string;
-  routineId: string;
-  dateISO: string;
-  startISO: string;
-  endISO: string;
-  targetSeconds: number;
-  actualSeconds: number;
-  deltaSeconds: number; // actual - target
-  tasksCompleted: number;
-  tasksTotal: number;
-};
+// Utils
+import { uid, fmt } from '@/libs/rituals-utils';
 
-// ---------- Utils ----------
-const uid = () => Math.random().toString(36).slice(2, 10);
-const fmt = (s: number) => {
-  const sign = s < 0 ? '-' : '';
-  const v = Math.abs(Math.trunc(s));
-  const m = Math.floor(v / 60);
-  const sec = v % 60;
-  return `${sign}${m}:${String(sec).padStart(2, '0')}`;
-};
+// API
+import { ritualsApi as api } from '@/libs/rituals-api';
 
-// localStorage guard
-const hasLS = () => {
-  try {
-    return typeof window !== 'undefined' && !!window.localStorage;
-  } catch {
-    return false;
-  }
-};
-const save = (k: string, v: any) => {
-  if (hasLS()) {
-    try {
-      localStorage.setItem(k, JSON.stringify(v));
-    } catch {}
-  }
-};
-const load = <T,>(k: string, fb: T): T => {
-  if (!hasLS()) return fb;
-  try {
-    const r = localStorage.getItem(k);
-    return r ? (JSON.parse(r) as T) : fb;
-  } catch {
-    return fb;
-  }
-};
-
-// Versioning + touched flag (better UX; no big reset button)
-const STORAGE_VERSION = 'rk_v3'; // bump when seed/schema changes
-const setVersion = () => {
-  if (hasLS())
-    try {
-      localStorage.setItem('rk_version', STORAGE_VERSION);
-    } catch {}
-};
-const getVersion = (): string | null => {
-  if (!hasLS()) return null;
-  try {
-    return localStorage.getItem('rk_version');
-  } catch {
-    return null;
-  }
-};
-const setTouched = () => {
-  if (hasLS())
-    try {
-      localStorage.setItem('rk_touched', '1');
-    } catch {}
-};
-const getTouched = (): boolean => {
-  if (!hasLS()) return false;
-  try {
-    return localStorage.getItem('rk_touched') === '1';
-  } catch {
-    return false;
-  }
-};
-
-// ---------- Seed (from user-provided list) ----------
-const seed: Routine = {
-  id: uid(),
-  name: 'Morning Routine',
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  tasks: [
-    { id: uid(), title: 'Dream Log', targetSeconds: 120 },
-    { id: uid(), title: 'Put away earplugs and Make Bed, bring towel', targetSeconds: 300 },
-    { id: uid(), title: 'mouth guard, brush teeth, wash face, brush hair, sunblock, toilet', targetSeconds: 300 },
-    { id: uid(), title: 'Body Measurements & Video + Photo, Gym Attire', targetSeconds: 300 },
-    { id: uid(), title: 'Caffeine, Medicine, Supplements', targetSeconds: 180 },
-    { id: uid(), title: 'Tidy Up / Pack Gym bag', targetSeconds: 600 },
-    { id: uid(), title: 'walk + coffee FOOT ROTATION', targetSeconds: 1200 },
-    { id: uid(), title: 'Workout', targetSeconds: 3600 },
-    { id: uid(), title: 'Walk back', targetSeconds: 900 },
-    { id: uid(), title: 'Shower', targetSeconds: 900 },
-    { id: uid(), title: 'Meditate', targetSeconds: 900 },
-  ],
-};
-
-// ---------- Store (with silent migration) ----------
+// ---------- Store (with database integration) ----------
 const useStore = () => {
-  // Load persisted data first
-  let initialRoutines = load('rk_routines', [seed]);
-  let initialSessions = load('rk_sessions', []);
+  const { data: session } = useSession();
+  const [routines, setRoutines] = useState<Routine[]>([]);
+  const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // If version changed and user hasn't touched, upgrade to seed silently
-  const storedVer = getVersion();
-  if (storedVer !== STORAGE_VERSION && !getTouched()) {
-    initialRoutines = [seed];
-    initialSessions = [];
-    setVersion();
-    if (hasLS()) {
-      try {
-        localStorage.setItem('rk_routines', JSON.stringify(initialRoutines));
-        localStorage.setItem('rk_sessions', JSON.stringify(initialSessions));
-      } catch {}
+  // Load data from database
+  const loadFromDatabase = useCallback(async () => {
+    if (!session?.user?.id) return;
+
+    try {
+      const [routinesData, sessionsData] = await Promise.all([api.getRoutines(), api.getSessions()]);
+
+      setRoutines(routinesData);
+      setSessions(sessionsData);
+
+      // Use requestAnimationFrame to ensure the state updates are rendered
+      requestAnimationFrame(() => {
+        setIsLoading(false);
+      });
+    } catch (error) {
+      console.error('Error loading data from database:', error);
+      setIsLoading(false);
     }
-  } else if (storedVer !== STORAGE_VERSION) {
-    // If user already customized, keep their data; just bump version
-    setVersion();
-  }
+  }, [session?.user?.id]);
 
-  const [routines, setRoutines] = useState<Routine[]>(initialRoutines);
-  const [sessions, setSessions] = useState<SessionRecord[]>(initialSessions);
+  // Initialize data
+  useEffect(() => {
+    if (!session?.user?.id) {
+      setIsLoading(false);
+      return;
+    }
 
-  useEffect(() => save('rk_routines', routines), [routines]);
-  useEffect(() => save('rk_sessions', sessions), [sessions]);
+    loadFromDatabase();
+  }, [session?.user?.id, loadFromDatabase]);
 
-  const addSession = (s: SessionRecord) => {
-    setSessions((arr) => [s, ...arr]);
-    setTouched();
+  // Save routine to database
+  const saveRoutine = async (routine: Routine) => {
+    try {
+      const savedRoutine = await api.saveRoutine(routine);
+      if (savedRoutine) {
+        setRoutines((prev) => {
+          const exists = prev.some((r) => r.id === routine.id);
+          return exists ? prev.map((r) => (r.id === routine.id ? savedRoutine : r)) : [...prev, savedRoutine];
+        });
+      }
+    } catch (error) {
+      console.error('Error saving routine:', error);
+    }
   };
 
-  // Dev helper (not shown in UI)
-  const resetToSeed = () => {
-    setRoutines([seed]);
-    setSessions([]);
-    setVersion();
-    if (hasLS()) {
-      try {
-        localStorage.setItem('rk_routines', JSON.stringify([seed]));
-        localStorage.setItem('rk_sessions', JSON.stringify([]));
-        localStorage.removeItem('rk_touched');
-      } catch {}
+  // Update routine in database
+  const updateRoutine = async (routine: Routine) => {
+    try {
+      const updatedRoutine = await api.updateRoutine(routine);
+      if (updatedRoutine) {
+        setRoutines((prev) => prev.map((r) => (r.id === routine.id ? updatedRoutine : r)));
+      }
+    } catch (error) {
+      console.error('Error updating routine:', error);
     }
   };
-  return { routines, setRoutines, sessions, addSession, resetToSeed };
+
+  // Delete routine from database
+  const deleteRoutine = async (id: string) => {
+    try {
+      const success = await api.deleteRoutine(id);
+
+      if (success) {
+        setRoutines((prev) => prev.filter((r) => r.id !== id));
+      } else {
+        // If delete failed, refresh data to sync with database
+        console.log('Delete failed, refreshing data from database...');
+        await loadFromDatabase();
+      }
+      return success;
+    } catch (error) {
+      console.error('Error deleting routine:', error);
+      // On error, also refresh data to sync with database
+      await loadFromDatabase();
+      return false;
+    }
+  };
+
+  const addSession = async (sessionRecord: SessionRecord) => {
+    try {
+      const savedSession = await api.addSession(sessionRecord);
+      if (savedSession) {
+        setSessions((prev) => [savedSession, ...prev]);
+      }
+    } catch (error) {
+      console.error('Error saving session:', error);
+    }
+  };
+
+  const setRoutinesWrapper = (updater: React.SetStateAction<Routine[]>) => {
+    setRoutines((prev) => {
+      const newRoutines = typeof updater === 'function' ? updater(prev) : updater;
+
+      // Auto-save changes to database
+      if (session?.user?.id) {
+        // Find changed routines and save them
+        newRoutines.forEach(async (routine) => {
+          const existingRoutine = prev.find((r) => r.id === routine.id);
+          if (!existingRoutine) {
+            // New routine
+            await saveRoutine(routine);
+          } else if (JSON.stringify(existingRoutine) !== JSON.stringify(routine)) {
+            // Updated routine
+            await updateRoutine(routine);
+          }
+        });
+      }
+
+      return newRoutines;
+    });
+  };
+
+  return {
+    routines,
+    setRoutines: setRoutinesWrapper,
+    sessions,
+    addSession,
+    deleteRoutine,
+    loadFromDatabase,
+    isLoading,
+  };
 };
 
 // ---------- Small UI bits ----------
-const NumberInput: React.FC<{ value: number; onChange: (val: number) => void; className?: string }> = ({
+const NumberInput: React.FC<{ value: number; onChange: (_newValue: number) => void; className?: string }> = ({
   value,
   onChange,
   className,
@@ -222,9 +198,10 @@ const RoutineView: React.FC<{
   routine: Routine;
   onEdit: () => void;
   onClose: () => void;
+  onDelete: () => void;
   sessions: SessionRecord[];
-  onRecord: (session: SessionRecord) => void;
-}> = ({ routine, onEdit, onClose, sessions, onRecord }) => {
+  onRecord: (_newSession: SessionRecord) => void;
+}> = ({ routine, onEdit, onClose, onDelete, sessions, onRecord }) => {
   const [running, setRunning] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState<number | null>(null);
@@ -236,6 +213,13 @@ const RoutineView: React.FC<{
   const [showHistory, setShowHistory] = useState(false);
   const timerRef = useRef<number | null>(null);
   const [startedAt, setStartedAt] = useState<string | null>(null);
+
+  const handleDelete = () => {
+    if (confirm(`Are you sure you want to delete "${routine.name}"? This action cannot be undone.`)) {
+      onDelete();
+      onClose(); // Close the view after deleting
+    }
+  };
 
   // Tick
   useEffect(() => {
@@ -435,6 +419,12 @@ const RoutineView: React.FC<{
         <button className="px-4 py-2 rounded-xl border" onClick={onEdit}>
           ✏️ Edit
         </button>
+        <button
+          className="px-4 py-2 rounded-xl border border-red-300 text-red-600 hover:bg-red-50"
+          onClick={handleDelete}
+        >
+          🗑️ Delete
+        </button>
         <button className="px-4 py-2 rounded-xl border" onClick={onClose}>
           ✖️ Close
         </button>
@@ -562,7 +552,7 @@ const RoutineView: React.FC<{
 // ---------- Editor with Drag & Drop ----------
 const RoutineEditor: React.FC<{
   draft: Routine;
-  onChange: (routine: Routine) => void;
+  onChange: (_updatedRoutine: Routine) => void;
   onSave: () => void;
   onClose: () => void;
 }> = ({ draft, onChange, onSave, onClose }) => {
@@ -610,25 +600,6 @@ const RoutineEditor: React.FC<{
           onChange={(e) => onChange({ ...draft, name: e.target.value, updatedAt: new Date().toISOString() })}
         />
       </div>
-
-      {/* Template refresh helper (subtle, inline) */}
-      {draft.name === 'Morning Routine' && draft.tasks.length < seed.tasks.length && (
-        <div className="p-3 rounded-xl border bg-amber-50 text-sm flex items-center justify-between">
-          <span>New template available for this routine.</span>
-          <button
-            className="px-3 py-1 rounded-lg border bg-white"
-            onClick={() => {
-              const fresh = {
-                ...draft,
-                tasks: seed.tasks.map((t) => ({ id: uid(), title: t.title, targetSeconds: t.targetSeconds })),
-              };
-              onChange({ ...fresh, updatedAt: new Date().toISOString() });
-            }}
-          >
-            Use latest template
-          </button>
-        </div>
-      )}
 
       <div className="grid gap-2">
         {draft.tasks.map((t, i) => {
@@ -686,120 +657,14 @@ interface RitualsProps {
 }
 
 export default function Rituals({ initialMode = 'home', initialRitualId = null }: RitualsProps = {}) {
-  const { routines, setRoutines, sessions, addSession } = useStore();
+  const { routines, setRoutines, sessions, addSession, deleteRoutine, isLoading } = useStore();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<'home' | 'view' | 'edit'>(initialMode === 'new' ? 'edit' : initialMode);
   const [activeId, setActiveId] = useState<string | null>(initialRitualId);
   const active = routines.find((r) => r.id === activeId) || null;
   const [draft, setDraft] = useState<Routine | null>(null);
 
-  // Initialize sample data if empty and handle URL parameters
-  useEffect(() => {
-    // Check if we have routines but none with the expected IDs from dashboard
-    const hasExpectedIds = routines.some((r) => ['1', '2', '3'].includes(r.id));
-
-    if (routines.length === 0 || !hasExpectedIds) {
-      // Clear existing data and create sample data with expected IDs
-      const sampleRoutines = [
-        {
-          id: '1',
-          name: 'Morning Routine',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [
-            { id: 'task1', title: 'Dream Log', targetSeconds: 120 },
-            { id: 'task2', title: 'Put away earplugs and Make Bed, bring towel', targetSeconds: 300 },
-            {
-              id: 'task3',
-              title: 'mouth guard, brush teeth, wash face, brush hair, sunblock, toilet',
-              targetSeconds: 300,
-            },
-            { id: 'task4', title: 'Body Measurements & Video + Photo, Gym Attire', targetSeconds: 300 },
-            { id: 'task5', title: 'Caffeine, Medicine, Supplements', targetSeconds: 180 },
-            { id: 'task6', title: 'Tidy Up / Pack Gym bag', targetSeconds: 600 },
-            { id: 'task7', title: 'walk + coffee FOOT ROTATION', targetSeconds: 1200 },
-            { id: 'task8', title: 'Workout', targetSeconds: 3600 },
-            { id: 'task9', title: 'Walk back', targetSeconds: 900 },
-            { id: 'task10', title: 'Shower', targetSeconds: 900 },
-            { id: 'task11', title: 'Meditate', targetSeconds: 900 },
-          ],
-        },
-        {
-          id: '2',
-          name: 'Exercise',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [
-            { id: 'task12', title: 'Warm up', targetSeconds: 300 },
-            { id: 'task13', title: 'Main workout', targetSeconds: 1500 },
-            { id: 'task14', title: 'Cool down', targetSeconds: 300 },
-          ],
-        },
-        {
-          id: '3',
-          name: 'Reading',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [
-            { id: 'task15', title: 'Choose material', targetSeconds: 60 },
-            { id: 'task16', title: 'Read actively', targetSeconds: 1140 },
-          ],
-        },
-      ];
-
-      console.log('Setting up sample routines with expected IDs:', sampleRoutines);
-      setRoutines(sampleRoutines);
-
-      // After setting routines, handle URL parameters
-      setTimeout(() => {
-        const urlMode = searchParams.get('mode');
-        const urlRitual = searchParams.get('ritual');
-
-        console.log('URL params:', { urlMode, urlRitual });
-        console.log('New sample routines:', sampleRoutines);
-
-        if (urlMode === 'new') {
-          openNew();
-        } else if (urlRitual) {
-          const routine = sampleRoutines.find((r) => r.id === urlRitual);
-          console.log('Found routine:', routine);
-          if (routine) {
-            if (urlMode === 'edit') {
-              openEdit(routine);
-            } else {
-              openView(routine);
-            }
-          } else {
-            console.log('No routine found with ID:', urlRitual);
-          }
-        }
-      }, 0);
-    } else {
-      // If routines already exist with expected IDs, handle URL parameters normally
-      const urlMode = searchParams.get('mode');
-      const urlRitual = searchParams.get('ritual');
-
-      console.log('URL params:', { urlMode, urlRitual });
-      console.log('Available routines:', routines);
-
-      if (urlMode === 'new') {
-        openNew();
-      } else if (urlRitual) {
-        const routine = routines.find((r) => r.id === urlRitual);
-        console.log('Found routine:', routine);
-        if (routine) {
-          if (urlMode === 'edit') {
-            openEdit(routine);
-          } else {
-            openView(routine);
-          }
-        } else {
-          console.log('No routine found with ID:', urlRitual);
-        }
-      }
-    }
-  }, [searchParams, routines, setRoutines]);
-  const openNew = () => {
+  const openNew = useCallback(() => {
     const routine: Routine = {
       id: uid(),
       name: 'New routine',
@@ -809,15 +674,43 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
     };
     setDraft(routine);
     setMode('edit');
-  };
-  const openView = (r: Routine) => {
+  }, []);
+
+  const openView = useCallback((r: Routine) => {
     setActiveId(r.id);
     setMode('view');
-  };
-  const openEdit = (r: Routine) => {
+  }, []);
+
+  const openEdit = useCallback((r: Routine) => {
     setDraft(JSON.parse(JSON.stringify(r)));
     setMode('edit');
-  };
+  }, []);
+
+  // Handle URL parameters when routines are loaded
+  useEffect(() => {
+    const urlMode = searchParams.get('mode');
+    const urlRitual = searchParams.get('ritual');
+
+    // Handle 'new' mode regardless of loading state or authentication
+    if (urlMode === 'new') {
+      openNew();
+      return;
+    }
+
+    // For other modes, wait until loading is complete
+    if (isLoading) return;
+
+    if (urlRitual) {
+      const routine = routines.find((r) => r.id === urlRitual);
+      if (routine) {
+        if (urlMode === 'edit') {
+          openEdit(routine);
+        } else {
+          openView(routine);
+        }
+      }
+    }
+  }, [searchParams, routines, isLoading, openNew, openEdit, openView]);
 
   const saveDraft = () => {
     if (!draft) return;
@@ -825,11 +718,27 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
       const exists = rs.some((x) => x.id === draft.id);
       return exists ? rs.map((x) => (x.id === draft.id ? draft : x)) : [draft, ...rs];
     });
-    setTouched();
     setMode('view');
     setActiveId(draft.id);
     setDraft(null);
   };
+
+  // Show loading state while data is being loaded
+  if (isLoading) {
+    return (
+      <div className="max-w-4xl mx-auto p-6 space-y-6">
+        <header className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Rituals</h1>
+        </header>
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading your routines...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
@@ -864,6 +773,7 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
             setMode('home');
             setActiveId(null);
           }}
+          onDelete={() => deleteRoutine(active.id)}
           sessions={sessions}
           onRecord={addSession}
         />
