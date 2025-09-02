@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useMonitoring } from '@/libs/monitoring';
+import { analytics } from '@/libs/analytics';
 
 interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
@@ -15,6 +17,7 @@ const PWAInstallPrompt = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
+  const { trackPWAInstall, trackPWAPromptShown, trackUserAction } = useMonitoring();
 
   useEffect(() => {
     // Check if app is already installed
@@ -30,6 +33,8 @@ const PWAInstallPrompt = () => {
       // Show install prompt after a delay to not be too pushy
       setTimeout(() => {
         setShowInstallPrompt(true);
+        trackPWAPromptShown();
+        analytics.trackPWAEvent('prompt_shown');
       }, 5000);
     };
 
@@ -37,6 +42,8 @@ const PWAInstallPrompt = () => {
       setIsInstalled(true);
       setShowInstallPrompt(false);
       setDeferredPrompt(null);
+      trackPWAInstall();
+      analytics.trackPWAEvent('installed');
     };
 
     // Listen for install prompt event
@@ -60,8 +67,19 @@ const PWAInstallPrompt = () => {
 
     if (outcome === 'accepted') {
       console.log('User accepted the install prompt');
+      trackUserAction('pwa_install_accepted', {
+        timestamp: Date.now(),
+        userAgent: navigator.userAgent,
+      });
+      analytics.trackPWAEvent('prompt_accepted', {
+        userAgent: navigator.userAgent,
+      });
     } else {
       console.log('User dismissed the install prompt');
+      trackUserAction('pwa_install_dismissed', {
+        timestamp: Date.now(),
+      });
+      analytics.trackPWAEvent('prompt_dismissed');
     }
 
     // Clear the deferredPrompt
@@ -73,6 +91,9 @@ const PWAInstallPrompt = () => {
     setShowInstallPrompt(false);
     // Don't show again for this session
     sessionStorage.setItem('pwa-install-dismissed', 'true');
+    trackUserAction('pwa_prompt_dismissed', {
+      timestamp: Date.now(),
+    });
   };
 
   // Don't show if already installed or dismissed this session

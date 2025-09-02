@@ -11,6 +11,12 @@ import { Tooltip } from 'react-tooltip';
 import config from '@/config';
 import PWAInstallPrompt from './PWAInstallPrompt';
 import OfflineIndicator from './OfflineIndicator';
+import MonitoringProvider from './MonitoringProvider';
+import MonitoringDashboard from './MonitoringDashboard';
+import SpeedInsightsProvider from './SpeedInsightsProvider';
+import SpeedInsightsDashboard from './SpeedInsightsDashboard';
+import VercelAnalyticsProvider from './VercelAnalyticsProvider';
+import AnalyticsDashboard from './AnalyticsDashboard';
 
 // Crisp customer chat support:
 // This component is separated from ClientLayout because it needs to be wrapped with <SessionProvider> to use useSession() hook
@@ -54,28 +60,39 @@ const ClientLayout = ({ children }: { children: ReactNode }) => {
   return (
     <>
       <SessionProvider>
-        {/* Show a progress bar at the top when navigating between pages */}
-        <NextTopLoader color={config.colors.main} showSpinner={false} />
+        <VercelAnalyticsProvider>
+          <MonitoringProvider>
+            <SpeedInsightsProvider>
+              {/* Show a progress bar at the top when navigating between pages */}
+              <NextTopLoader color={config.colors.main} showSpinner={false} />
 
-        {/* Content inside app/page.js files  */}
-        {children}
+              {/* Content inside app/page.js files  */}
+              {children}
 
-        {/* PWA Components */}
-        <PWAInstallPrompt />
-        <OfflineIndicator />
+              {/* PWA Components */}
+              <PWAInstallPrompt />
+              <OfflineIndicator />
 
-        {/* Show Success/Error messages anywhere from the app with toast() */}
-        <Toaster
-          toastOptions={{
-            duration: 3000,
-          }}
-        />
+              {/* Monitoring Dashboards (development only) */}
+              <MonitoringDashboard />
+              <SpeedInsightsDashboard />
+              <AnalyticsDashboard />
 
-        {/* Show a tooltip if any JSX element has these 2 attributes: data-tooltip-id="tooltip" data-tooltip-content="" */}
-        <Tooltip id="tooltip" className="z-[60] !opacity-100 max-w-sm shadow-lg" />
+              {/* Show Success/Error messages anywhere from the app with toast() */}
+              <Toaster
+                toastOptions={{
+                  duration: 3000,
+                }}
+              />
 
-        {/* Set Crisp customer chat support */}
-        <CrispChat />
+              {/* Show a tooltip if any JSX element has these 2 attributes: data-tooltip-id="tooltip" data-tooltip-content="" */}
+              <Tooltip id="tooltip" className="z-[60] !opacity-100 max-w-sm shadow-lg" />
+
+              {/* Set Crisp customer chat support */}
+              <CrispChat />
+            </SpeedInsightsProvider>
+          </MonitoringProvider>
+        </VercelAnalyticsProvider>
       </SessionProvider>
     </>
   );
