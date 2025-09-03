@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, ReactElement, useEffect } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Crisp } from 'crisp-sdk-web';
@@ -9,15 +9,11 @@ import NextTopLoader from 'nextjs-toploader';
 import { Toaster } from 'react-hot-toast';
 import { Tooltip } from 'react-tooltip';
 import config from '@/config';
-import { isAdminUser } from '@/libs/admin';
 import PWAInstallPrompt from './PWAInstallPrompt';
 import OfflineIndicator from './OfflineIndicator';
 import MonitoringProvider from './MonitoringProvider';
-import MonitoringDashboard from './MonitoringDashboard';
 import SpeedInsightsProvider from './SpeedInsightsProvider';
-import SpeedInsightsDashboard from './SpeedInsightsDashboard';
 import VercelAnalyticsProvider from './VercelAnalyticsProvider';
-import AnalyticsDashboard from './AnalyticsDashboard';
 
 // Crisp customer chat support:
 // This component is separated from ClientLayout because it needs to be wrapped with <SessionProvider> to use useSession() hook
@@ -51,27 +47,6 @@ const CrispChat = (): null => {
   return null;
 };
 
-// Admin widgets component that needs session context
-const AdminWidgets = (): ReactElement | null => {
-  const pathname = usePathname();
-  const { data: session } = useSession();
-
-  // Only show admin widgets on admin pages for admin users
-  const isAdminPage = pathname?.startsWith('/admin');
-  const isAdmin = isAdminUser(session);
-  const showAdminWidgets = isAdminPage && isAdmin;
-
-  if (!showAdminWidgets) return null;
-
-  return (
-    <>
-      <MonitoringDashboard />
-      <SpeedInsightsDashboard />
-      <AnalyticsDashboard />
-    </>
-  );
-};
-
 // All the client wrappers are here (they can't be in server components)
 // 1. SessionProvider: Allow the useSession from next-auth (find out if user is auth or not)
 // 2. NextTopLoader: Show a progress bar at the top when navigating between pages
@@ -94,9 +69,6 @@ const ClientLayout = ({ children }: { children: ReactNode }) => {
               {/* PWA Components */}
               <PWAInstallPrompt />
               <OfflineIndicator />
-
-              {/* Admin Monitoring Dashboards (only on admin pages) */}
-              <AdminWidgets />
 
               {/* Show Success/Error messages anywhere from the app with toast() */}
               <Toaster
