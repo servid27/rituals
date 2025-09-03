@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import ButtonAccount from '@/components/ButtonAccount';
-import AdminPanel from '@/components/AdminPanel';
 
 interface UserStats {
   totalRituals: number;
@@ -142,9 +141,6 @@ export default function Dashboard() {
         <h1 className="text-3xl font-bold">Dashboard</h1>
         <ButtonAccount />
       </header>
-
-      {/* Admin Panel */}
-      <AdminPanel />
 
       <div className="space-y-4">
         <h2 className="text-sm text-gray-600">Your daily progress</h2>

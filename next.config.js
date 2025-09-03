@@ -156,6 +156,30 @@ const nextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: '/admin/dashboard',
+        destination: '/admin',
+        permanent: true,
+      },
+      {
+        source: '/admin/monitoring',
+        destination: '/admin',
+        permanent: true,
+      },
+      {
+        source: '/admin/analytics',
+        destination: '/admin',
+        permanent: true,
+      },
+      {
+        source: '/admin/speed-insights',
+        destination: '/admin',
+        permanent: true,
+      },
+    ];
+  },
   webpack: (config, { webpack, isServer }) => {
     // Ignore MongoDB's optional dependencies to prevent build warnings
     if (isServer) {

@@ -215,13 +215,7 @@ export const speedInsights = new SpeedInsightsService();
 
 // React hook for speed insights
 export function useSpeedInsights() {
-  return {
-    getMetrics: speedInsights.getMetrics.bind(speedInsights),
-    getMetricsSummary: speedInsights.getMetricsSummary.bind(speedInsights),
-    getPerformanceScore: speedInsights.getPerformanceScore.bind(speedInsights),
-    trackCustomMetric: speedInsights.trackCustomMetric.bind(speedInsights),
-    clearMetrics: speedInsights.clearMetrics.bind(speedInsights),
-  };
+  return speedInsights;
 }
 
 export default speedInsights;

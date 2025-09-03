@@ -22,6 +22,14 @@ export function isAdminUser(session: Session | null): boolean {
 export function getAdminRoutes() {
   return [
     {
+      path: '/admin/dashboard',
+      title: 'Admin Dashboard',
+      description: 'Administrative control panel and system overview',
+      icon: '⚙️',
+      color: 'gray',
+      features: ['Admin overview', 'Quick access panel', 'System status', 'Navigation hub'],
+    },
+    {
       path: '/admin/monitoring',
       title: 'System Monitoring',
       description: 'Real-time system health and user activity tracking',
