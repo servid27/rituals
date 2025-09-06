@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/libs/next-auth';
-import connectMongo from '@/libs/mongoose';
-import User from '@/models/User';
-import Routine from '@/models/Routine';
+import { UserService } from '@/libs/user-service';
+import { RoutineService } from '@/libs/routine-service';
 
 // Simple in-memory cache
 let usersCache: { data: any; timestamp: number } | null = null;
@@ -26,62 +25,17 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    await connectMongo();
-
-    // Get comprehensive user analytics from REAL DATABASE
+    // Get comprehensive user analytics from Supabase
     const [totalUsers, usersToday, usersThisWeek, usersThisMonth, mostActiveUsers, userStats] = await Promise.all([
-      User.countDocuments(),
-      User.countDocuments({
-        createdAt: {
-          $gte: new Date(new Date().setHours(0, 0, 0, 0)),
-        },
-      }),
-      User.countDocuments({
-        createdAt: {
-          $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-        },
-      }),
-      User.countDocuments({
-        createdAt: {
-          $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-        },
-      }),
-      // Get users with most routine activity
-      Routine.aggregate([
-        {
-          $group: {
-            _id: '$userId',
-            routineCount: { $sum: 1 },
-            sessionCount: { $sum: { $size: '$sessions' } },
-          },
-        },
-        { $sort: { sessionCount: -1 } },
-        { $limit: 5 },
-        {
-          $lookup: {
-            from: 'users',
-            localField: '_id',
-            foreignField: '_id',
-            as: 'user',
-          },
-        },
-        { $unwind: '$user' },
-      ]),
-      // Get user statistics
-      User.aggregate([
-        {
-          $group: {
-            _id: null,
-            totalRituals: { $sum: '$stats.totalRituals' },
-            avgCurrentStreak: { $avg: '$stats.currentStreak' },
-            maxLongestStreak: { $max: '$stats.longestStreak' },
-            avgCompletedToday: { $avg: '$stats.completedToday' },
-          },
-        },
-      ]),
+      UserService.getTotalCount(),
+      UserService.getCountSince(new Date(new Date().setHours(0, 0, 0, 0))),
+      UserService.getCountSince(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
+      UserService.getCountSince(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+      UserService.getMostActiveUsers(5),
+      UserService.getAggregatedStats(),
     ]);
 
-    const stats = userStats[0] || {
+    const stats = userStats || {
       totalRituals: 0,
       avgCurrentStreak: 0,
       maxLongestStreak: 0,
@@ -102,11 +56,11 @@ export async function GET(request: NextRequest) {
         averageCompletedToday: Math.round(stats.avgCompletedToday * 10) / 10,
       },
       mostActiveUsers: mostActiveUsers.map((user) => ({
-        id: user._id,
-        name: user.user?.name || 'Anonymous',
-        email: user.user?.email || 'No email',
-        routineCount: user.routineCount,
-        sessionCount: user.sessionCount,
+        id: user.id,
+        name: user.name || 'Anonymous',
+        email: user.email || 'No email',
+        routineCount: user.routineCount || 0,
+        sessionCount: user.sessionCount || 0,
       })),
     };
 

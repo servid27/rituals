@@ -1,13 +1,12 @@
-import { NextResponse, NextRequest } from "next/server";
-import { headers } from "next/headers";
-import Stripe from "stripe";
-import connectMongo from "@/libs/mongoose";
-import configFile from "@/config";
-import User from "@/models/User";
-import { findCheckoutSession } from "@/libs/stripe";
+import { NextResponse, NextRequest } from 'next/server';
+import { headers } from 'next/headers';
+import Stripe from 'stripe';
+import configFile from '@/config';
+import { UserService } from '@/libs/user-service';
+import { findCheckoutSession } from '@/libs/stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2023-08-16",
+  apiVersion: '2023-08-16',
   typescript: true,
 });
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -17,11 +16,9 @@ const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 // By default, it'll store the user in the database
 // See more: https://shipfa.st/docs/features/payments
 export async function POST(req: NextRequest) {
-  await connectMongo();
-
   const body = await req.text();
 
-  const signature = (await headers()).get("stripe-signature");
+  const signature = (await headers()).get('stripe-signature');
 
   let eventType;
   let event;
@@ -38,11 +35,10 @@ export async function POST(req: NextRequest) {
 
   try {
     switch (eventType) {
-      case "checkout.session.completed": {
+      case 'checkout.session.completed': {
         // First payment is successful and a subscription is created (if mode was set to "subscription" in ButtonCheckout)
         // ✅ Grant access to the product
-        const stripeObject: Stripe.Checkout.Session = event.data
-          .object as Stripe.Checkout.Session;
+        const stripeObject: Stripe.Checkout.Session = event.data.object as Stripe.Checkout.Session;
 
         const session = await findCheckoutSession(stripeObject.id);
 
@@ -53,36 +49,33 @@ export async function POST(req: NextRequest) {
 
         if (!plan) break;
 
-        const customer = (await stripe.customers.retrieve(
-          customerId as string
-        )) as Stripe.Customer;
+        const customer = (await stripe.customers.retrieve(customerId as string)) as Stripe.Customer;
 
         let user;
 
         // Get or create the user. userId is normally passed in the checkout session (clientReferenceID) to identify the user when we get the webhook event
         if (userId) {
-          user = await User.findById(userId);
+          user = await UserService.findById(userId);
         } else if (customer.email) {
-          user = await User.findOne({ email: customer.email });
+          user = await UserService.findByEmail(customer.email);
 
           if (!user) {
-            user = await User.create({
+            user = await UserService.create({
               email: customer.email,
               name: customer.name,
             });
-
-            await user.save();
           }
         } else {
-          console.error("No user found");
-          throw new Error("No user found");
+          console.error('No user found');
+          throw new Error('No user found');
         }
 
         // Update user data + Grant user access to your product. It's a boolean in the database, but could be a number of credits, etc...
-        user.priceId = priceId;
-        user.customerId = customerId;
-        user.hasAccess = true;
-        await user.save();
+        await UserService.update(user.id, {
+          priceId: priceId,
+          customerId: customerId as string,
+          hasAccess: true,
+        });
 
         // Extra: send email with user link, product page, etc...
         // try {
@@ -94,60 +87,58 @@ export async function POST(req: NextRequest) {
         break;
       }
 
-      case "checkout.session.expired": {
+      case 'checkout.session.expired': {
         // User didn't complete the transaction
         // You don't need to do anything here, but you can send an email to the user to remind them to complete the transaction, for instance
         break;
       }
 
-      case "customer.subscription.updated": {
+      case 'customer.subscription.updated': {
         // The customer might have changed the plan (higher or lower plan, cancel soon etc...)
         // You don't need to do anything here, because Stripe will let us know when the subscription is canceled for good (at the end of the billing cycle) in the "customer.subscription.deleted" event
         // You can update the user data to show a "Subscription ending soon" badge for instance
         break;
       }
 
-      case "customer.subscription.deleted": {
+      case 'customer.subscription.deleted': {
         // The customer subscription stopped
         // ❌ Revoke access to the product
-        const stripeObject: Stripe.Subscription = event.data
-          .object as Stripe.Subscription;
+        const stripeObject: Stripe.Subscription = event.data.object as Stripe.Subscription;
 
-        const subscription = await stripe.subscriptions.retrieve(
-          stripeObject.id
-        );
-        const user = await User.findOne({ customerId: subscription.customer });
+        const subscription = await stripe.subscriptions.retrieve(stripeObject.id);
+        const user = await UserService.findByCustomerId(subscription.customer as string);
 
-        // Revoke access to your product
-        user.hasAccess = false;
-        await user.save();
+        if (user) {
+          // Revoke access to your product
+          await UserService.update(user.id, { hasAccess: false });
+        }
 
         break;
       }
 
-      case "invoice.paid": {
+      case 'invoice.paid': {
         // Customer just paid an invoice (for instance, a recurring payment for a subscription)
         // ✅ Grant access to the product
 
-        const stripeObject: Stripe.Invoice = event.data
-          .object as Stripe.Invoice;
+        const stripeObject: Stripe.Invoice = event.data.object as Stripe.Invoice;
 
         const priceId = stripeObject.lines.data[0].price.id;
         const customerId = stripeObject.customer;
 
-        const user = await User.findOne({ customerId });
+        const user = await UserService.findByCustomerId(customerId as string);
+
+        if (!user) break;
 
         // Make sure the invoice is for the same plan (priceId) the user subscribed to
         if (user.priceId !== priceId) break;
 
         // Grant user access to your product. It's a boolean in the database, but could be a number of credits, etc...
-        user.hasAccess = true;
-        await user.save();
+        await UserService.update(user.id, { hasAccess: true });
 
         break;
       }
 
-      case "invoice.payment_failed":
+      case 'invoice.payment_failed':
         // A payment failed (for instance the customer does not have a valid payment method)
         // ❌ Revoke access to the product
         // ⏳ OR wait for the customer to pay (more friendly):
@@ -160,7 +151,7 @@ export async function POST(req: NextRequest) {
       // Unhandled event type
     }
   } catch (e) {
-    console.error("stripe error: ", e.message);
+    console.error('stripe error: ', e.message);
   }
 
   return NextResponse.json({});

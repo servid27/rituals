@@ -181,14 +181,8 @@ const nextConfig = {
     ];
   },
   webpack: (config, { webpack, isServer }) => {
-    // Ignore MongoDB's optional dependencies to prevent build warnings
-    if (isServer) {
-      config.plugins.push(
-        new webpack.IgnorePlugin({
-          resourceRegExp: /^(kerberos|@mongodb-js\/zstd|@aws-sdk\/credential-providers|gcp-metadata|snappy|socks|aws4|mongodb-client-encryption)$/,
-        })
-      );
-    }
+    // Note: MongoDB webpack configuration has been removed
+    // as the application now uses Supabase PostgreSQL
 
     return config;
   },

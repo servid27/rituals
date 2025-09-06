@@ -1,16 +1,14 @@
-import { NextResponse, NextRequest } from "next/server";
-import connectMongo from "@/libs/mongoose";
+import { NextResponse, NextRequest } from 'next/server';
+import { LeadService } from '@/libs/lead-service';
 
 // This route is used to store the leads that are generated from the landing page.
 // The API call is initiated by <ButtonLead /> component
 // Duplicate emails just return 200 OK
 export async function POST(req: NextRequest) {
-  await connectMongo();
-
   const body = await req.json();
 
   if (!body.email) {
-    return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    return NextResponse.json({ error: 'Email is required' }, { status: 400 });
   }
 
   try {
@@ -18,10 +16,10 @@ export async function POST(req: NextRequest) {
     // For instance, sending a welcome email (use the the sendEmail helper function from /libs/resend)
     // For instance, saving the lead in the database (uncomment the code below)
 
-    // const lead = await Lead.findOne({ email: body.email });
+    // const lead = await LeadService.findByEmail(body.email);
 
     // if (!lead) {
-    // 	await Lead.create({ email: body.email });
+    // 	await LeadService.create({ email: body.email });
     // }
 
     return NextResponse.json({});

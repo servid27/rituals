@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/libs/next-auth';
-import connectMongo from '@/libs/mongoose';
+import { supabase } from '@/libs/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,14 +10,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Pre-warm database connection
-    await connectMongo();
+    // Test Supabase connection
+    const { data, error } = await supabase.from('users').select('count', { count: 'exact', head: true }).limit(1);
+
+    if (error) {
+      return NextResponse.json({ status: 'error', error: 'Database connection failed' }, { status: 500 });
+    }
 
     return NextResponse.json(
       {
         status: 'ok',
         timestamp: new Date().toISOString(),
-        connection: 'warmed',
+        connection: 'healthy',
+        database: 'connected',
       },
       {
         headers: {
@@ -26,6 +31,6 @@ export async function GET(request: NextRequest) {
       }
     );
   } catch (error) {
-    return NextResponse.json({ status: 'error', error: 'Connection failed' }, { status: 500 });
+    return NextResponse.json({ status: 'error', error: 'Health check failed' }, { status: 500 });
   }
 }

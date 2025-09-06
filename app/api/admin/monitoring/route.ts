@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/libs/next-auth';
-import connectMongo from '@/libs/mongoose';
-import User from '@/models/User';
-import Routine from '@/models/Routine';
+import { UserService } from '@/libs/user-service';
+import { RoutineService } from '@/libs/routine-service';
 
 // Simple in-memory cache
 let cache: { data: any; timestamp: number } | null = null;
