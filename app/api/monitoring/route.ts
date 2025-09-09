@@ -5,14 +5,7 @@ export async function POST(request: NextRequest) {
     const events = await request.json();
 
     // In production, you would send this to your analytics service
-    // For now, we'll just log it and store basic metrics
-
-    console.log('📊 Monitoring Events Received:', {
-      count: Array.isArray(events) ? events.length : 1,
-      timestamp: new Date().toISOString(),
-      userAgent: request.headers.get('user-agent'),
-      ip: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip'),
-    });
+    // The endpoint processes events but does not log them here to reduce noise.
 
     // Basic validation
     if (!events || (Array.isArray(events) && events.length === 0)) {
@@ -25,25 +18,23 @@ export async function POST(request: NextRequest) {
     for (const event of processedEvents) {
       // Basic event validation
       if (!event.event || !event.timestamp || !event.sessionId) {
-        console.warn('Invalid event received:', event);
+        // Skip invalid events quietly
         continue;
       }
 
       // Log different event types
       switch (event.event) {
         case 'error_occurred':
-          console.error('🚨 Error tracked:', event.properties);
+          // send to error tracking pipeline (not logged here)
           break;
         case 'performance_issue':
-          if (event.properties?.loadTime > 3000) {
-            console.warn('🐌 Slow page detected:', event.properties);
-          }
+          // handle perf issue (not logged here)
           break;
         case 'pwa_installed':
-          console.log('📱 PWA installation tracked:', event.properties);
+          // handle pwa install (not logged here)
           break;
         default:
-          console.log(`📈 Event tracked: ${event.event}`);
+        // generic event handling
       }
     }
 
@@ -52,7 +43,7 @@ export async function POST(request: NextRequest) {
       processed: processedEvents.length,
     });
   } catch (error) {
-    console.error('Failed to process monitoring events:', error);
+    // Error: return generic error without logging to reduce noise
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

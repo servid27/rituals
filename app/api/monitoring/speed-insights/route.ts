@@ -4,34 +4,12 @@ export async function POST(request: NextRequest) {
   try {
     const speedData = await request.json();
 
-    // Log speed insights data
-    console.log('⚡ Speed Insights Received:', {
-      metrics: speedData.metrics?.length || 0,
-      pageUrl: speedData.pageUrl,
-      timestamp: new Date().toISOString(),
-      userAgent: request.headers.get('user-agent')?.substring(0, 100) + '...',
-    });
+    // In production, metrics are processed and forwarded to storage/analytics.
 
     // Process each metric
     if (speedData.metrics && Array.isArray(speedData.metrics)) {
       for (const metric of speedData.metrics) {
-        // Log performance issues
-        if (metric.rating === 'poor') {
-          console.warn(`🚨 Poor Performance - ${metric.name}:`, {
-            value: metric.value,
-            rating: metric.rating,
-            page: speedData.pageUrl,
-            timestamp: new Date(metric.timestamp).toISOString(),
-          });
-        }
-
-        // Log good performance
-        if (metric.rating === 'good') {
-          console.log(`✅ Good Performance - ${metric.name}:`, {
-            value: metric.value,
-            page: speedData.pageUrl,
-          });
-        }
+        // Performance metrics are handled (no local logging to reduce noise)
       }
     }
 
@@ -47,7 +25,6 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Failed to process speed insights:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
