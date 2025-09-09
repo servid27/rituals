@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { auth } from '@/libs/next-auth';
+import { getAuthSession } from '@/libs/next-auth';
 import { createCheckout } from '@/libs/stripe';
 import { UserService } from '@/libs/user-service';
 
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const session = await auth();
+  const session = await getAuthSession();
 
     const { priceId, mode, successUrl, cancelUrl } = body;
 

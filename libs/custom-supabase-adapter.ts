@@ -7,7 +7,7 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
   });
 
   return {
-    async createUser(user) {
+  async createUser(user: any) {
       const { data, error } = await supabase
         .from('users')
         .insert({
@@ -30,7 +30,7 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
       };
     },
 
-    async getUser(id) {
+  async getUser(id: string) {
       const { data, error } = await supabase.from('users').select('*').eq('id', id).single();
 
       if (error) return null;
@@ -43,7 +43,7 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
       };
     },
 
-    async getUserByEmail(email) {
+  async getUserByEmail(email: string) {
       const { data, error } = await supabase.from('users').select('*').eq('email', email).single();
 
       if (error) return null;
@@ -56,7 +56,7 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
       };
     },
 
-    async getUserByAccount({ providerAccountId, provider }) {
+  async getUserByAccount({ providerAccountId, provider }: any) {
       // First get the account
       const { data: accountData, error: accountError } = await supabase
         .from('accounts')
@@ -85,7 +85,7 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
       };
     },
 
-    async updateUser(user) {
+  async updateUser(user: any) {
       const { error } = await supabase
         .from('users')
         .update({
@@ -112,7 +112,7 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
       };
     },
 
-    async linkAccount(account) {
+  async linkAccount(account: any) {
       const { error } = await supabase.from('accounts').insert({
         id: crypto.randomUUID(),
         user_id: account.userId,
@@ -131,7 +131,7 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
       if (error) throw error;
     },
 
-    async unlinkAccount({ providerAccountId, provider }) {
+  async unlinkAccount({ providerAccountId, provider }: any) {
       const { error } = await supabase
         .from('accounts')
         .delete()
@@ -141,7 +141,7 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
       if (error) throw error;
     },
 
-    async createSession({ sessionToken, userId, expires }) {
+  async createSession({ sessionToken, userId, expires }: any) {
       const { data, error } = await supabase
         .from('sessions')
         .insert({
@@ -161,7 +161,7 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
       };
     },
 
-    async getSessionAndUser(sessionToken) {
+  async getSessionAndUser(sessionToken: string) {
       const { data, error } = await supabase
         .from('sessions')
         .select(
@@ -197,7 +197,7 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
       };
     },
 
-    async updateSession({ sessionToken, expires, userId }) {
+  async updateSession({ sessionToken, expires, userId }: any) {
       const { data, error } = await supabase
         .from('sessions')
         .update({
@@ -216,13 +216,13 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
       };
     },
 
-    async deleteSession(sessionToken) {
+  async deleteSession(sessionToken: string) {
       const { error } = await supabase.from('sessions').delete().eq('session_token', sessionToken);
 
       if (error) throw error;
     },
 
-    async createVerificationToken({ identifier, expires, token }) {
+  async createVerificationToken({ identifier, expires, token }: any) {
       const { data, error } = await supabase
         .from('verification_tokens')
         .insert({
@@ -241,7 +241,7 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
       };
     },
 
-    async useVerificationToken({ identifier, token }) {
+  async useVerificationToken({ identifier, token }: any) {
       const { data, error } = await supabase
         .from('verification_tokens')
         .delete()

@@ -1,10 +1,10 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { auth } from '@/libs/next-auth';
+import { getAuthSession } from '@/libs/next-auth';
 import { createCustomerPortal } from '@/libs/stripe';
 import { UserService } from '@/libs/user-service';
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
+  const session = await getAuthSession();
 
   if (session) {
     try {

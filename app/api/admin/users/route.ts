@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/libs/next-auth';
+import { getAuthSession } from '@/libs/next-auth';
 import { UserService } from '@/libs/user-service';
 import { RoutineService } from '@/libs/routine-service';
 
@@ -9,8 +9,8 @@ const CACHE_DURATION = 60000; // 1 minute for user data
 
 export async function GET(request: NextRequest) {
   try {
-    // Quick auth check
-    const session = await auth();
+  // Quick auth check
+  const session = await getAuthSession();
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

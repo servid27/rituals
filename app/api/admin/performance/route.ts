@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/libs/next-auth';
+import { getAuthSession } from '@/libs/next-auth';
 
 // Simple in-memory cache for performance data
 let performanceCache: { data: any; timestamp: number } | null = null;
@@ -9,8 +9,8 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    // Quick auth check
-    const session = await auth();
+  // Quick auth check
+  const session = await getAuthSession();
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
