@@ -57,36 +57,36 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
     },
 
     async getUserByAccount({ providerAccountId, provider }) {
-      const { data, error } = await supabase
+      // First get the account
+      const { data: accountData, error: accountError } = await supabase
         .from('accounts')
-        .select(
-          `
-          users (
-            id,
-            email,
-            name,
-            image,
-            email_verified
-          )
-        `
-        )
+        .select('user_id')
         .eq('provider', provider)
         .eq('provider_account_id', providerAccountId)
         .single();
 
-      if (error) return null;
-      const user = (data as any).users;
+      if (accountError || !accountData) return null;
+
+      // Then get the user
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', accountData.user_id)
+        .single();
+
+      if (userError || !userData) return null;
+
       return {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        image: user.image,
-        emailVerified: user.email_verified,
+        id: userData.id,
+        email: userData.email,
+        name: userData.name,
+        image: userData.image,
+        emailVerified: userData.email_verified,
       };
     },
 
     async updateUser(user) {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('users')
         .update({
           email: user.email,
@@ -94,11 +94,15 @@ export function CustomSupabaseAdapter(url: string, secret: string): Adapter {
           image: user.image,
           email_verified: user.emailVerified,
         })
-        .eq('id', user.id)
-        .select()
-        .single();
+        .eq('id', user.id);
 
       if (error) throw error;
+
+      // Fetch the updated user separately
+      const { data, error: fetchError } = await supabase.from('users').select('*').eq('id', user.id).single();
+
+      if (fetchError) throw fetchError;
+
       return {
         id: data.id,
         email: data.email,

@@ -2,12 +2,9 @@ import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import EmailProvider from 'next-auth/providers/email';
 import { CustomSupabaseAdapter } from './custom-supabase-adapter';
-import { Resend } from 'resend';
 import config from '@/config';
 
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-
-export const authOptions = {
+export const authOptions: any = {
   debug: process.env.NODE_ENV === 'development',
   secret: process.env.NEXTAUTH_SECRET,
   adapter: CustomSupabaseAdapter(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!),
@@ -44,7 +41,7 @@ export const authOptions = {
 
   // Use database sessions when adapter is provided
   session: {
-    strategy: 'database' as const,
+    strategy: 'database',
   },
 
   callbacks: {
@@ -64,4 +61,10 @@ export const authOptions = {
   },
 };
 
-export const { handlers, auth, signIn, signOut } = NextAuth(authOptions);
+// Helper function for API routes to get session
+export async function getAuthSession(): Promise<any> {
+  const { getServerSession } = await import('next-auth');
+  return getServerSession(authOptions);
+}
+
+export default NextAuth(authOptions);

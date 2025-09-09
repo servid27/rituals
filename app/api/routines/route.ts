@@ -1,10 +1,10 @@
-import { auth } from '@/libs/next-auth';
+import { getAuthSession } from '@/libs/next-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { RoutineService } from '@/libs/routine-service';
 
 export async function GET() {
   try {
-    const session = await auth();
+    const session = await getAuthSession();
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -25,7 +25,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await auth();
+    const session = await getAuthSession();
     console.log('POST /api/routines - session:', session);
     console.log('POST /api/routines - user:', session?.user);
 
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    const session = await auth();
+    const session = await getAuthSession();
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -132,7 +132,7 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const session = await auth();
+    const session = await getAuthSession();
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
