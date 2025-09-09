@@ -3,6 +3,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { useMonitoring } from '@/libs/monitoring';
+import { analytics } from '@/libs/analytics';
 
 // Types
 import type { Task, Routine, SessionRecord } from '@/types/rituals';
@@ -16,6 +18,7 @@ import { ritualsApi as api } from '@/libs/rituals-api';
 // ---------- Store (with database integration) ----------
 const useStore = () => {
   const { data: session } = useSession();
+  const { trackUserAction } = useMonitoring();
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,11 +60,32 @@ const useStore = () => {
       if (savedRoutine) {
         setRoutines((prev) => {
           const exists = prev.some((r) => r.id === routine.id);
+          if (!exists) {
+            // Track with both monitoring and analytics
+            trackUserAction('routine_created', {
+              routineId: routine.id,
+              routineName: routine.name,
+              taskCount: routine.tasks.length,
+              timestamp: Date.now(),
+            });
+
+            // Enhanced Vercel Analytics tracking
+            analytics.trackRoutineEvent('created', {
+              routineId: routine.id,
+              routineName: routine.name,
+              taskCount: routine.tasks.length,
+            });
+          }
           return exists ? prev.map((r) => (r.id === routine.id ? savedRoutine : r)) : [...prev, savedRoutine];
         });
       }
     } catch (error) {
       console.error('Error saving routine:', error);
+      trackUserAction('error_occurred', {
+        action: 'save_routine',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        routineId: routine.id,
+      });
     }
   };
 
@@ -71,23 +95,55 @@ const useStore = () => {
       const updatedRoutine = await api.updateRoutine(routine);
       if (updatedRoutine) {
         setRoutines((prev) => prev.map((r) => (r.id === routine.id ? updatedRoutine : r)));
+
+        // Track with both monitoring and analytics
+        trackUserAction('routine_updated', {
+          routineId: routine.id,
+          routineName: routine.name,
+          taskCount: routine.tasks.length,
+          timestamp: Date.now(),
+        });
+
+        // Enhanced Vercel Analytics tracking
+        analytics.trackRoutineEvent('updated', {
+          routineId: routine.id,
+          routineName: routine.name,
+          taskCount: routine.tasks.length,
+        });
       }
     } catch (error) {
       console.error('Error updating routine:', error);
+      trackUserAction('error_occurred', {
+        action: 'update_routine',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        routineId: routine.id,
+      });
     }
   };
 
   // Delete routine from database
   const deleteRoutine = async (id: string) => {
     try {
+      const routineToDelete = routines.find((r) => r.id === id);
       const success = await api.deleteRoutine(id);
 
       if (success) {
         setRoutines((prev) => prev.filter((r) => r.id !== id));
+        trackUserAction('routine_deleted', {
+          routineId: id,
+          routineName: routineToDelete?.name || 'Unknown',
+          taskCount: routineToDelete?.tasks.length || 0,
+          timestamp: Date.now(),
+        });
       } else {
         // If delete failed, refresh data to sync with database
         console.log('Delete failed, refreshing data from database...');
         await loadFromDatabase();
+        trackUserAction('error_occurred', {
+          action: 'delete_routine',
+          error: 'Delete operation failed',
+          routineId: id,
+        });
       }
       return success;
     } catch (error) {
@@ -103,9 +159,41 @@ const useStore = () => {
       const savedSession = await api.addSession(sessionRecord);
       if (savedSession) {
         setSessions((prev) => [savedSession, ...prev]);
+
+        // Find the routine name for tracking
+        const routine = routines.find((r) => r.id === sessionRecord.routineId);
+
+        // Track with both monitoring and analytics
+        trackUserAction('routine_completed', {
+          routineId: sessionRecord.routineId,
+          routineName: routine?.name || 'Unknown',
+          tasksCompleted: sessionRecord.tasksCompleted,
+          tasksTotal: sessionRecord.tasksTotal,
+          actualSeconds: sessionRecord.actualSeconds,
+          targetSeconds: sessionRecord.targetSeconds,
+          deltaSeconds: sessionRecord.deltaSeconds,
+          completionRate: (sessionRecord.tasksCompleted / sessionRecord.tasksTotal) * 100,
+          efficiency:
+            sessionRecord.targetSeconds > 0 ? (sessionRecord.targetSeconds / sessionRecord.actualSeconds) * 100 : 0,
+          timestamp: Date.now(),
+        });
+
+        // Enhanced Vercel Analytics tracking
+        analytics.trackRoutineEvent('completed', {
+          routineId: sessionRecord.routineId,
+          routineName: routine?.name || 'Unknown',
+          taskCount: sessionRecord.tasksTotal,
+          duration: sessionRecord.actualSeconds,
+          completionRate: (sessionRecord.tasksCompleted / sessionRecord.tasksTotal) * 100,
+        });
       }
     } catch (error) {
       console.error('Error saving session:', error);
+      trackUserAction('error_occurred', {
+        action: 'save_session',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        routineId: sessionRecord.routineId,
+      });
     }
   };
 

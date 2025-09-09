@@ -1,7 +1,6 @@
 import { auth } from '@/libs/next-auth';
 import { NextRequest, NextResponse } from 'next/server';
-import connectMongo from '@/libs/mongoose';
-import Routine from '@/models/Routine';
+import { RoutineService } from '@/libs/routine-service';
 
 export async function GET(req: NextRequest) {
   try {
@@ -13,28 +12,21 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const routineId = searchParams.get('routineId');
 
-    await connectMongo();
-
     if (routineId) {
       // Get sessions for a specific routine
-      const routine = await Routine.findOne({
-        userId: session.user.id,
-        id: routineId,
-      });
+      const routine = await RoutineService.findByUserIdAndId(session.user.id, routineId);
 
       if (!routine) {
         return NextResponse.json({ error: 'Routine not found' }, { status: 404 });
       }
 
-      return NextResponse.json({ sessions: routine.sessions });
+      return NextResponse.json({ sessions: routine.sessions || [] });
     } else {
       // Get all sessions for all user's routines
-      const routines = await Routine.find({
-        userId: session.user.id,
-        isActive: true,
-      });
+      const routines = await RoutineService.findByUserId(session.user.id);
+      const activeRoutines = routines.filter((routine) => routine.isActive);
 
-      const allSessions = routines.flatMap((routine) => routine.sessions);
+      const allSessions = activeRoutines.flatMap((routine) => routine.sessions || []);
       return NextResponse.json({ sessions: allSessions });
     }
   } catch (error) {
@@ -68,12 +60,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    await connectMongo();
-
-    const routine = await Routine.findOne({
-      userId: session.user.id,
-      id: routineId,
-    });
+    const routine = await RoutineService.findByUserIdAndId(session.user.id, routineId);
 
     if (!routine) {
       return NextResponse.json({ error: 'Routine not found' }, { status: 404 });
@@ -92,8 +79,7 @@ export async function POST(req: NextRequest) {
       tasksTotal,
     };
 
-    routine.sessions.unshift(newSession);
-    await routine.save();
+    const updatedRoutine = await RoutineService.addSession(routine.id, newSession);
 
     return NextResponse.json({ session: newSession });
   } catch (error) {

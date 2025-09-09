@@ -1,14 +1,19 @@
-"use client";
+'use client';
 
-import { ReactNode, useEffect } from "react";
-import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
-import { Crisp } from "crisp-sdk-web";
-import { SessionProvider } from "next-auth/react";
-import NextTopLoader from "nextjs-toploader";
-import { Toaster } from "react-hot-toast";
-import { Tooltip } from "react-tooltip";
-import config from "@/config";
+import { ReactNode, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import { Crisp } from 'crisp-sdk-web';
+import { SessionProvider } from 'next-auth/react';
+import NextTopLoader from 'nextjs-toploader';
+import { Toaster } from 'react-hot-toast';
+import { Tooltip } from 'react-tooltip';
+import config from '@/config';
+import PWAInstallPrompt from './PWAInstallPrompt';
+import OfflineIndicator from './OfflineIndicator';
+import MonitoringProvider from './MonitoringProvider';
+import SpeedInsightsProvider from './SpeedInsightsProvider';
+import VercelAnalyticsProvider from './VercelAnalyticsProvider';
 
 // Crisp customer chat support:
 // This component is separated from ClientLayout because it needs to be wrapped with <SessionProvider> to use useSession() hook
@@ -23,10 +28,7 @@ const CrispChat = (): null => {
 
       // (Optional) If onlyShowOnRoutes array is not empty in config.js file, Crisp will be hidden on the routes in the array.
       // Use <AppButtonSupport> instead to show it (user clicks on the button to show Crisp—it cleans the UI)
-      if (
-        config.crisp.onlyShowOnRoutes &&
-        !config.crisp.onlyShowOnRoutes?.includes(pathname)
-      ) {
+      if (config.crisp.onlyShowOnRoutes && !config.crisp.onlyShowOnRoutes?.includes(pathname)) {
         Crisp.chat.hide();
         Crisp.chat.onChatClosed(() => {
           Crisp.chat.hide();
@@ -55,27 +57,34 @@ const ClientLayout = ({ children }: { children: ReactNode }) => {
   return (
     <>
       <SessionProvider>
-        {/* Show a progress bar at the top when navigating between pages */}
-        <NextTopLoader color={config.colors.main} showSpinner={false} />
+        <VercelAnalyticsProvider>
+          <MonitoringProvider>
+            <SpeedInsightsProvider>
+              {/* Show a progress bar at the top when navigating between pages */}
+              <NextTopLoader color={config.colors.main} showSpinner={false} />
 
-        {/* Content inside app/page.js files  */}
-        {children}
+              {/* Content inside app/page.js files  */}
+              {children}
 
-        {/* Show Success/Error messages anywhere from the app with toast() */}
-        <Toaster
-          toastOptions={{
-            duration: 3000,
-          }}
-        />
+              {/* PWA Components */}
+              <PWAInstallPrompt />
+              <OfflineIndicator />
 
-        {/* Show a tooltip if any JSX element has these 2 attributes: data-tooltip-id="tooltip" data-tooltip-content="" */}
-        <Tooltip
-          id="tooltip"
-          className="z-[60] !opacity-100 max-w-sm shadow-lg"
-        />
+              {/* Show Success/Error messages anywhere from the app with toast() */}
+              <Toaster
+                toastOptions={{
+                  duration: 3000,
+                }}
+              />
 
-        {/* Set Crisp customer chat support */}
-        <CrispChat />
+              {/* Show a tooltip if any JSX element has these 2 attributes: data-tooltip-id="tooltip" data-tooltip-content="" */}
+              <Tooltip id="tooltip" className="z-[60] !opacity-100 max-w-sm shadow-lg" />
+
+              {/* Set Crisp customer chat support */}
+              <CrispChat />
+            </SpeedInsightsProvider>
+          </MonitoringProvider>
+        </VercelAnalyticsProvider>
       </SessionProvider>
     </>
   );

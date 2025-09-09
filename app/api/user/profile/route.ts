@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/libs/next-auth';
-import connectMongo from '@/libs/mongoose';
-import User from '@/models/User';
+import { UserService } from '@/libs/user-service';
 
 export async function GET() {
   try {
@@ -11,9 +10,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    await connectMongo();
-
-    const user = await User.findOne({ email: session.user.email });
+    const user = await UserService.findByEmail(session.user.email);
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -56,7 +53,10 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid theme preference' }, { status: 400 });
     }
 
-    await connectMongo();
+    const user = await UserService.findByEmail(session.user.email);
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
 
     const updateData: any = {};
 
@@ -65,39 +65,36 @@ export async function PUT(request: NextRequest) {
     if (timezone !== undefined) updateData.timezone = timezone;
 
     if (preferences) {
-      updateData.preferences = {};
+      const updatedPreferences = { ...user.preferences };
       if (preferences.dailyReminderTime !== undefined) {
-        updateData.preferences.dailyReminderTime = preferences.dailyReminderTime;
+        updatedPreferences.dailyReminderTime = preferences.dailyReminderTime;
       }
       if (preferences.emailNotifications !== undefined) {
-        updateData.preferences.emailNotifications = preferences.emailNotifications;
+        updatedPreferences.emailNotifications = preferences.emailNotifications;
       }
       if (preferences.theme !== undefined) {
-        updateData.preferences.theme = preferences.theme;
+        updatedPreferences.theme = preferences.theme;
       }
+      updateData.preferences = updatedPreferences;
     }
 
-    const user = await User.findOneAndUpdate(
-      { email: session.user.email },
-      { $set: updateData },
-      { new: true, upsert: false }
-    );
+    const updatedUser = await UserService.update(user.id, updateData);
 
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    if (!updatedUser) {
+      return NextResponse.json({ error: 'Failed to update user' }, { status: 500 });
     }
 
     return NextResponse.json({
       message: 'Profile updated successfully',
       user: {
-        name: user.name,
-        email: user.email,
-        bio: user.bio || '',
-        timezone: user.timezone || 'UTC',
+        name: updatedUser.name,
+        email: updatedUser.email,
+        bio: updatedUser.bio || '',
+        timezone: updatedUser.timezone || 'UTC',
         preferences: {
-          dailyReminderTime: user.preferences?.dailyReminderTime || '09:00',
-          emailNotifications: user.preferences?.emailNotifications ?? true,
-          theme: user.preferences?.theme || 'light',
+          dailyReminderTime: updatedUser.preferences?.dailyReminderTime || '09:00',
+          emailNotifications: updatedUser.preferences?.emailNotifications ?? true,
+          theme: updatedUser.preferences?.theme || 'light',
         },
       },
     });

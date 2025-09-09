@@ -1,7 +1,6 @@
 import { auth } from '@/libs/next-auth';
 import { NextRequest, NextResponse } from 'next/server';
-import connectMongo from '@/libs/mongoose';
-import Routine from '@/models/Routine';
+import { RoutineService } from '@/libs/routine-service';
 
 export async function DELETE(_req: NextRequest) {
   try {
@@ -10,17 +9,12 @@ export async function DELETE(_req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    await connectMongo();
-
     // Delete placeholder routines (those with simple IDs like '1', '2', '3')
-    const result = await Routine.deleteMany({
-      userId: session.user.id,
-      id: { $in: ['1', '2', '3'] },
-    });
+    const deletedCount = await RoutineService.deleteByUserIdAndIds(session.user.id, ['1', '2', '3']);
 
     return NextResponse.json({
       message: 'Placeholder routines cleaned up',
-      deletedCount: result.deletedCount,
+      deletedCount,
     });
   } catch (error) {
     console.error('Error cleaning up placeholder routines:', error);
