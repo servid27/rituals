@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-  const session = await getAuthSession();
+    const session = await getAuthSession();
 
     const { priceId, mode, successUrl, cancelUrl } = body;
 

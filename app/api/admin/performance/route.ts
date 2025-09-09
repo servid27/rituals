@@ -5,13 +5,58 @@ import { getAuthSession } from '@/libs/next-auth';
 let performanceCache: { data: any; timestamp: number } | null = null;
 const CACHE_DURATION = 10000; // 10 seconds for more real-time feel
 
+function mask(value?: string | null) {
+  if (!value) return '<missing>';
+  if (value.length <= 8) return '****';
+  return `${value.slice(0, 4)}...${value.slice(-4)}`;
+}
+
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
+  // Basic request info
   try {
-  // Quick auth check
-  const session = await getAuthSession();
+    console.log('[perf][info] GET request', {
+      url: request.url,
+      method: request.method,
+      env: process.env.NODE_ENV ?? '<no NODE_ENV>',
+      nextauth_url: mask(process.env.NEXTAUTH_URL),
+      supabase_url: mask(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      supabase_anon: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? 'present' : 'missing',
+      supabase_service_role: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'present' : 'missing',
+    });
+
+    // Log a few safe headers (avoid logging full cookies/authorization)
+    const headersToLog: Record<string, string | undefined> = {
+      host: request.headers.get('host') ?? undefined,
+      'user-agent': request.headers.get('user-agent') ?? undefined,
+      'content-type': request.headers.get('content-type') ?? undefined,
+      'x-forwarded-for': request.headers.get('x-forwarded-for') ?? undefined,
+      cookie_present: request.headers.get('cookie') ? 'yes' : 'no',
+    };
+    console.log('[perf][headers]', headersToLog);
+  } catch (e) {
+    console.warn('[perf][warn] failed to log request metadata', e);
+  }
+
+  try {
+    // Quick auth check with detailed logging around the call
+    let session = null;
+    try {
+      console.log('[perf][debug] calling getAuthSession()');
+      session = await getAuthSession();
+      console.log('[perf][debug] getAuthSession() returned', {
+        hasSession: !!session,
+        userId: session?.user?.id ?? '<no-id>',
+        userEmail: session?.user?.email ?? '<no-email>',
+      });
+    } catch (err) {
+      console.error('[perf][error] getAuthSession() threw', err instanceof Error ? err.stack ?? err.message : err);
+      // Continue to return 401 below if no valid session
+    }
+
     if (!session) {
+      console.warn('[perf][warn] unauthorized access attempt');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -23,6 +68,7 @@ export async function GET(request: NextRequest) {
         timestamp: new Date().toISOString(),
       };
 
+      console.log('[perf][info] returning cached performance data');
       return NextResponse.json(cachedData, {
         headers: {
           'Cache-Control': 'private, max-age=10',
@@ -96,13 +142,22 @@ export async function GET(request: NextRequest) {
       timestamp: Date.now(),
     };
 
+    console.log('[perf][info] returning fresh performance data', {
+      responseTime: performanceData.systemMetrics.responseTime,
+      heapUsedMB,
+      heapTotalMB,
+    });
+
     return NextResponse.json(performanceData, {
       headers: {
         'Cache-Control': 'private, max-age=10',
       },
     });
   } catch (error) {
-    console.error('Failed to get performance data:', error);
+    console.error(
+      '[perf][fatal] Failed to get performance data:',
+      error instanceof Error ? error.stack ?? error.message : error
+    );
     return NextResponse.json(
       {
         error: 'Internal server error',

@@ -35,7 +35,7 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-  const session = await getAuthSession();
+    const session = await getAuthSession();
 
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });

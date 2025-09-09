@@ -9,8 +9,8 @@ const CACHE_DURATION = 60000; // 1 minute for user data
 
 export async function GET(request: NextRequest) {
   try {
-  // Quick auth check
-  const session = await getAuthSession();
+    // Quick auth check
+    const session = await getAuthSession();
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

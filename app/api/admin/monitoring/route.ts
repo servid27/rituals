@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-  // Quick auth check
-  const session = await getAuthSession();
+    // Quick auth check
+    const session = await getAuthSession();
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
