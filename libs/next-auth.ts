@@ -3,6 +3,9 @@ import GoogleProvider from 'next-auth/providers/google';
 import EmailProvider from 'next-auth/providers/email';
 import { CustomSupabaseAdapter } from './custom-supabase-adapter';
 import config from '@/config';
+import { Resend } from 'resend';
+
+const resend = new Resend(process.env.RESEND_API_KEY!);
 
 export const authOptions: any = {
   debug: process.env.NODE_ENV === 'development',
@@ -21,22 +24,19 @@ export const authOptions: any = {
         };
       },
     }),
-    // Simple Email provider using Resend SMTP
-    ...(process.env.RESEND_API_KEY
-      ? [
-          EmailProvider({
-            server: {
-              host: 'smtp.resend.com',
-              port: 587,
-              auth: {
-                user: 'resend',
-                pass: process.env.RESEND_API_KEY,
-              },
-            },
-            from: config.resend.fromNoReply!,
-          }),
-        ]
-      : []),
+    EmailProvider({
+      from: process.env.RESEND_EMAIL!,
+      // Keep server block only if you still want SMTP fallback; otherwise remove it.
+      sendVerificationRequest: async ({ identifier, url }) => {
+        await resend.emails.send({
+          from: process.env.RESEND_EMAIL!,
+          to: identifier,
+          subject: 'Your sign-in link',
+          html: `<p>Click to sign in:</p><p><a href="${url}">${url}</a></p>`,
+          text: `Sign in: ${url}`,
+        });
+      },
+    }),
   ],
 
   // Use database sessions when adapter is provided
