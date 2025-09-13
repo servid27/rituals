@@ -307,7 +307,41 @@ const RoutineView: React.FC<{
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const [taskStartTime, setTaskStartTime] = useState<number | null>(null);
   const [pausedDuration, setPausedDuration] = useState(0);
+  const [taskPausedDuration, setTaskPausedDuration] = useState(0);
   const [lastUpdateTime, setLastUpdateTime] = useState<number | null>(null);
+
+  // Refs to track the current state for timer callbacks
+  const runningRef = useRef(running);
+  const sessionStartTimeRef = useRef(sessionStartTime);
+  const taskStartTimeRef = useRef(taskStartTime);
+  const pausedDurationRef = useRef(pausedDuration);
+  const taskPausedDurationRef = useRef(taskPausedDuration);
+  const currentIndexRef = useRef(currentIndex);
+
+  // Update refs when state changes
+  useEffect(() => {
+    runningRef.current = running;
+  }, [running]);
+
+  useEffect(() => {
+    sessionStartTimeRef.current = sessionStartTime;
+  }, [sessionStartTime]);
+
+  useEffect(() => {
+    taskStartTimeRef.current = taskStartTime;
+  }, [taskStartTime]);
+
+  useEffect(() => {
+    pausedDurationRef.current = pausedDuration;
+  }, [pausedDuration]);
+
+  useEffect(() => {
+    taskPausedDurationRef.current = taskPausedDuration;
+  }, [taskPausedDuration]);
+
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
 
   // Session persistence key
   const sessionKey = `routine_session_${routine.id}`;
@@ -325,6 +359,7 @@ const RoutineView: React.FC<{
       sessionStartTime,
       taskStartTime,
       pausedDuration,
+      taskPausedDuration,
       lastUpdateTime: Date.now(),
       routineId: routine.id,
       version: 1, // for future migrations
@@ -344,6 +379,7 @@ const RoutineView: React.FC<{
     sessionStartTime,
     taskStartTime,
     pausedDuration,
+    taskPausedDuration,
     sessionKey,
     routine.id,
   ]);
@@ -393,6 +429,7 @@ const RoutineView: React.FC<{
       setSessionStartTime(sessionState.sessionStartTime);
       setTaskStartTime(sessionState.taskStartTime);
       setPausedDuration(sessionState.pausedDuration || 0);
+      setTaskPausedDuration(sessionState.taskPausedDuration || 0);
 
       // Calculate elapsed time accounting for time away
       const now = Date.now();
@@ -473,15 +510,21 @@ const RoutineView: React.FC<{
   useEffect(() => {
     if (!running || !sessionStartTime) return;
 
+    let rafId: number;
+    let intervalId: NodeJS.Timeout;
+
     const updateTimers = () => {
+      // Check running state from ref to get latest value
+      if (!runningRef.current || !sessionStartTimeRef.current) return;
+
       const now = Date.now();
-      const totalElapsedMs = now - sessionStartTime - pausedDuration;
+      const totalElapsedMs = now - sessionStartTimeRef.current - pausedDurationRef.current;
       const totalElapsedSec = Math.floor(totalElapsedMs / 1000);
 
       setGlobalElapsed(Math.max(0, totalElapsedSec));
 
-      if (taskStartTime && currentIndex !== null) {
-        const taskElapsedMs = now - taskStartTime;
+      if (taskStartTimeRef.current && currentIndexRef.current !== null) {
+        const taskElapsedMs = now - taskStartTimeRef.current - taskPausedDurationRef.current;
         const taskElapsedSec = Math.floor(taskElapsedMs / 1000);
         setPerTaskElapsed(Math.max(0, taskElapsedSec));
       }
@@ -492,37 +535,45 @@ const RoutineView: React.FC<{
 
     // Use requestAnimationFrame for smooth updates and better background behavior
     const tick = () => {
-      if (running) {
+      if (runningRef.current) {
         updateTimers();
-        requestAnimationFrame(tick);
+        rafId = requestAnimationFrame(tick);
       }
     };
 
-    const rafId = requestAnimationFrame(tick);
+    rafId = requestAnimationFrame(tick);
 
-    // Fallback with setInterval for when RAF is throttled
-    const intervalId = setInterval(updateTimers, 1000);
+    // Fallback with setInterval for when RAF is throttled, but check running state
+    intervalId = setInterval(() => {
+      if (runningRef.current) {
+        updateTimers();
+      }
+    }, 1000);
 
     return () => {
-      cancelAnimationFrame(rafId);
-      clearInterval(intervalId);
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
     };
-  }, [running, sessionStartTime, taskStartTime, pausedDuration, currentIndex]);
+  }, [running, sessionStartTime]); // Only depend on running state and sessionStartTime
 
   // Handle visibility change to detect when user returns to tab
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!document.hidden && sessionStarted) {
+      if (!document.hidden && sessionStarted && runningRef.current) {
         // User returned to tab, refresh timers immediately
         const now = Date.now();
-        if (sessionStartTime) {
-          const totalElapsedMs = now - sessionStartTime - pausedDuration;
+        if (sessionStartTimeRef.current) {
+          const totalElapsedMs = now - sessionStartTimeRef.current - pausedDurationRef.current;
           const totalElapsedSec = Math.floor(totalElapsedMs / 1000);
           setGlobalElapsed(Math.max(0, totalElapsedSec));
         }
 
-        if (taskStartTime && currentIndex !== null) {
-          const taskElapsedMs = now - taskStartTime;
+        if (taskStartTimeRef.current && currentIndexRef.current !== null) {
+          const taskElapsedMs = now - taskStartTimeRef.current - taskPausedDurationRef.current;
           const taskElapsedSec = Math.floor(taskElapsedMs / 1000);
           setPerTaskElapsed(Math.max(0, taskElapsedSec));
         }
@@ -531,7 +582,7 @@ const RoutineView: React.FC<{
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [sessionStarted, sessionStartTime, taskStartTime, pausedDuration, currentIndex]);
+  }, [sessionStarted]);
 
   const handleStartPause = () => {
     const now = Date.now();
@@ -547,6 +598,7 @@ const RoutineView: React.FC<{
       setSessionStartTime(now);
       setTaskStartTime(now);
       setPausedDuration(0);
+      setTaskPausedDuration(0);
       return;
     }
 
@@ -558,11 +610,7 @@ const RoutineView: React.FC<{
       // Resuming
       const pauseTime = now - (lastUpdateTime || now);
       setPausedDuration((prev) => prev + pauseTime);
-
-      // Reset task start time to account for pause
-      if (currentIndex !== null && taskStartTime) {
-        setTaskStartTime(taskStartTime + pauseTime);
-      }
+      setTaskPausedDuration((prev) => prev + pauseTime);
 
       setRunning(true);
     }
@@ -579,6 +627,7 @@ const RoutineView: React.FC<{
     setSessionStartTime(null);
     setTaskStartTime(null);
     setPausedDuration(0);
+    setTaskPausedDuration(0);
     setLastUpdateTime(null);
     clearSessionState();
   };
@@ -596,6 +645,7 @@ const RoutineView: React.FC<{
       setCurrentIndex(nextIndex);
       setPerTaskElapsed(0);
       setTaskStartTime(Date.now()); // Reset task timer for next task
+      setTaskPausedDuration(0); // Reset task pause duration for next task
     } else {
       setRunning(false);
       setCurrentIndex(null);
@@ -615,6 +665,7 @@ const RoutineView: React.FC<{
       setCurrentIndex(nextIndex);
       setPerTaskElapsed(0);
       setTaskStartTime(Date.now()); // Reset task timer for next task
+      setTaskPausedDuration(0); // Reset task pause duration for next task
     } else {
       setRunning(false);
       setCurrentIndex(null);
