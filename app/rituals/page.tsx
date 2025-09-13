@@ -15,7 +15,7 @@ function RitualsContent() {
 
 export default function RitualsPage() {
   return (
-    <main className="p-6">
+    <main className="p-3 sm:p-6">
       <Suspense fallback={<div className="flex items-center justify-center h-64">Loading...</div>}>
         <RitualsContent />
       </Suspense>
