@@ -299,41 +299,273 @@ const RoutineView: React.FC<{
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [finishStats, setFinishStats] = useState<SessionRecord | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const timerRef = useRef<number | null>(null);
   const [startedAt, setStartedAt] = useState<string | null>(null);
+  const [showSessionRestore, setShowSessionRestore] = useState(false);
+  const [hasRestoredSession, setHasRestoredSession] = useState(false);
+
+  // Background timer state - tracks real time even when tab is inactive
+  const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
+  const [taskStartTime, setTaskStartTime] = useState<number | null>(null);
+  const [pausedDuration, setPausedDuration] = useState(0);
+  const [lastUpdateTime, setLastUpdateTime] = useState<number | null>(null);
+
+  // Session persistence key
+  const sessionKey = `routine_session_${routine.id}`;
+
+  // Save session state to localStorage
+  const saveSessionState = useCallback(() => {
+    if (!sessionStarted) return;
+
+    const sessionState = {
+      running,
+      sessionStarted,
+      currentIndex,
+      doneActuals,
+      startedAt,
+      sessionStartTime,
+      taskStartTime,
+      pausedDuration,
+      lastUpdateTime: Date.now(),
+      routineId: routine.id,
+      version: 1, // for future migrations
+    };
+
+    try {
+      localStorage.setItem(sessionKey, JSON.stringify(sessionState));
+    } catch (e) {
+      console.warn('Failed to save session state:', e);
+    }
+  }, [
+    running,
+    sessionStarted,
+    currentIndex,
+    doneActuals,
+    startedAt,
+    sessionStartTime,
+    taskStartTime,
+    pausedDuration,
+    sessionKey,
+    routine.id,
+  ]);
+
+  // Load session state from localStorage
+  const loadSessionState = useCallback(() => {
+    try {
+      const saved = localStorage.getItem(sessionKey);
+      if (!saved) return false;
+
+      const sessionState = JSON.parse(saved);
+      if (sessionState.routineId !== routine.id || !sessionState.sessionStarted) return false;
+
+      // Check if session is recent (within 24 hours)
+      const timeSinceLastUpdate = Date.now() - (sessionState.lastUpdateTime || 0);
+      if (timeSinceLastUpdate > 24 * 60 * 60 * 1000) {
+        try {
+          localStorage.removeItem(sessionKey);
+        } catch (e) {
+          console.warn('Failed to clear old session state:', e);
+        }
+        return false;
+      }
+
+      // Show restore prompt instead of auto-restoring
+      setShowSessionRestore(true);
+      return true;
+    } catch (e) {
+      console.warn('Failed to load session state:', e);
+      return false;
+    }
+  }, [sessionKey, routine.id]);
+
+  // Actually restore the session state
+  const restoreSession = useCallback(() => {
+    try {
+      const saved = localStorage.getItem(sessionKey);
+      if (!saved) return;
+
+      const sessionState = JSON.parse(saved);
+
+      // Restore state
+      setSessionStarted(sessionState.sessionStarted);
+      setCurrentIndex(sessionState.currentIndex);
+      setDoneActuals(sessionState.doneActuals || []);
+      setStartedAt(sessionState.startedAt);
+      setSessionStartTime(sessionState.sessionStartTime);
+      setTaskStartTime(sessionState.taskStartTime);
+      setPausedDuration(sessionState.pausedDuration || 0);
+
+      // Calculate elapsed time accounting for time away
+      const now = Date.now();
+      const timeSinceLastUpdate = now - (sessionState.lastUpdateTime || now);
+
+      if (sessionState.running && timeSinceLastUpdate < 300000) {
+        // Resume if less than 5 minutes
+        setRunning(true);
+      } else {
+        setRunning(false);
+        // Add away time to paused duration if we were paused or away too long
+        if (!sessionState.running || timeSinceLastUpdate >= 300000) {
+          setPausedDuration((prev) => prev + timeSinceLastUpdate);
+        }
+      }
+
+      setHasRestoredSession(true);
+      setShowSessionRestore(false);
+    } catch (e) {
+      console.warn('Failed to restore session state:', e);
+    }
+  }, [sessionKey]);
+
+  // Clear session state
+  const clearSessionState = useCallback(() => {
+    try {
+      localStorage.removeItem(sessionKey);
+    } catch (e) {
+      console.warn('Failed to clear session state:', e);
+    }
+  }, [sessionKey]);
+
+  // Handle page unload/beforeunload to save state
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (sessionStarted && running) {
+        saveSessionState();
+        e.preventDefault();
+        e.returnValue = 'You have a routine session in progress. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+    };
+
+    const handleUnload = () => {
+      if (sessionStarted) {
+        saveSessionState();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('unload', handleUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('unload', handleUnload);
+    };
+  }, [sessionStarted, running, saveSessionState]);
 
   const handleDelete = () => {
     if (confirm(`Are you sure you want to delete "${routine.name}"? This action cannot be undone.`)) {
+      clearSessionState(); // Clear any saved session
       onDelete();
       onClose(); // Close the view after deleting
     }
   };
 
-  // Tick
+  // Load saved session on component mount
   useEffect(() => {
-    if (!running) return;
-    timerRef.current = window.setInterval(() => {
-      setGlobalElapsed((s) => s + 1);
-      setPerTaskElapsed((s) => s + 1);
-    }, 1000);
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
+    loadSessionState();
+  }, [loadSessionState]);
+
+  // Save session state whenever relevant state changes
+  useEffect(() => {
+    saveSessionState();
+  }, [saveSessionState]);
+
+  // Background timer with timestamp-based calculation
+  useEffect(() => {
+    if (!running || !sessionStartTime) return;
+
+    const updateTimers = () => {
+      const now = Date.now();
+      const totalElapsedMs = now - sessionStartTime - pausedDuration;
+      const totalElapsedSec = Math.floor(totalElapsedMs / 1000);
+
+      setGlobalElapsed(Math.max(0, totalElapsedSec));
+
+      if (taskStartTime && currentIndex !== null) {
+        const taskElapsedMs = now - taskStartTime;
+        const taskElapsedSec = Math.floor(taskElapsedMs / 1000);
+        setPerTaskElapsed(Math.max(0, taskElapsedSec));
       }
     };
-  }, [running]);
+
+    // Update immediately
+    updateTimers();
+
+    // Use requestAnimationFrame for smooth updates and better background behavior
+    const tick = () => {
+      if (running) {
+        updateTimers();
+        requestAnimationFrame(tick);
+      }
+    };
+
+    const rafId = requestAnimationFrame(tick);
+
+    // Fallback with setInterval for when RAF is throttled
+    const intervalId = setInterval(updateTimers, 1000);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearInterval(intervalId);
+    };
+  }, [running, sessionStartTime, taskStartTime, pausedDuration, currentIndex]);
+
+  // Handle visibility change to detect when user returns to tab
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && sessionStarted) {
+        // User returned to tab, refresh timers immediately
+        const now = Date.now();
+        if (sessionStartTime) {
+          const totalElapsedMs = now - sessionStartTime - pausedDuration;
+          const totalElapsedSec = Math.floor(totalElapsedMs / 1000);
+          setGlobalElapsed(Math.max(0, totalElapsedSec));
+        }
+
+        if (taskStartTime && currentIndex !== null) {
+          const taskElapsedMs = now - taskStartTime;
+          const taskElapsedSec = Math.floor(taskElapsedMs / 1000);
+          setPerTaskElapsed(Math.max(0, taskElapsedSec));
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [sessionStarted, sessionStartTime, taskStartTime, pausedDuration, currentIndex]);
 
   const handleStartPause = () => {
+    const now = Date.now();
+
     if (!sessionStarted) {
+      // Starting new session
       setSessionStarted(true);
       setCurrentIndex(0);
       setPerTaskElapsed(0);
+      setGlobalElapsed(0);
       setRunning(true);
       setStartedAt(new Date().toISOString());
+      setSessionStartTime(now);
+      setTaskStartTime(now);
+      setPausedDuration(0);
       return;
     }
-    setRunning((r) => !r);
+
+    if (running) {
+      // Pausing
+      setRunning(false);
+      setLastUpdateTime(now);
+    } else {
+      // Resuming
+      const pauseTime = now - (lastUpdateTime || now);
+      setPausedDuration((prev) => prev + pauseTime);
+
+      // Reset task start time to account for pause
+      if (currentIndex !== null && taskStartTime) {
+        setTaskStartTime(taskStartTime + pauseTime);
+      }
+
+      setRunning(true);
+    }
   };
 
   const reset = () => {
@@ -344,6 +576,11 @@ const RoutineView: React.FC<{
     setDoneActuals([]);
     setGlobalElapsed(0);
     setStartedAt(null);
+    setSessionStartTime(null);
+    setTaskStartTime(null);
+    setPausedDuration(0);
+    setLastUpdateTime(null);
+    clearSessionState();
   };
 
   const completeCurrent = () => {
@@ -358,9 +595,11 @@ const RoutineView: React.FC<{
     if (nextIndex < routine.tasks.length) {
       setCurrentIndex(nextIndex);
       setPerTaskElapsed(0);
+      setTaskStartTime(Date.now()); // Reset task timer for next task
     } else {
       setRunning(false);
       setCurrentIndex(null);
+      setTaskStartTime(null);
     }
   };
 
@@ -375,9 +614,11 @@ const RoutineView: React.FC<{
     if (nextIndex < routine.tasks.length) {
       setCurrentIndex(nextIndex);
       setPerTaskElapsed(0);
+      setTaskStartTime(Date.now()); // Reset task timer for next task
     } else {
       setRunning(false);
       setCurrentIndex(null);
+      setTaskStartTime(null);
     }
   };
 
@@ -389,7 +630,7 @@ const RoutineView: React.FC<{
   const finish = () => {
     const tasksDone = doneActuals.filter((v) => typeof v === 'number').length;
     const now = new Date();
-    const startISO = startedAt || new Date(now.getTime() - totalActual * 1000).toISOString();
+    const startISO = startedAt || new Date(now.getTime() - globalElapsed * 1000).toISOString();
     const rec: SessionRecord = {
       id: uid(),
       routineId: routine.id,
@@ -397,13 +638,13 @@ const RoutineView: React.FC<{
       startISO,
       endISO: now.toISOString(),
       targetSeconds: totalTarget,
-      actualSeconds: totalActual,
-      deltaSeconds: totalActual - totalTarget,
+      actualSeconds: globalElapsed, // Use calculated global elapsed time
+      deltaSeconds: globalElapsed - totalTarget,
       tasksCompleted: tasksDone,
       tasksTotal: routine.tasks.length,
     };
     onRecord(rec);
-    reset();
+    reset(); // This will clear session state
     setFinishStats(rec);
   };
 
@@ -424,7 +665,15 @@ const RoutineView: React.FC<{
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h2 className="text-xl sm:text-2xl font-semibold">{routine.name}</h2>
+        <div className="flex flex-col gap-1">
+          <h2 className="text-xl sm:text-2xl font-semibold">{routine.name}</h2>
+          {hasRestoredSession && (
+            <div className="text-sm text-blue-600 flex items-center gap-1">
+              <span>📋</span>
+              <span>Session restored - continuing where you left off</span>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="px-3 py-2 rounded-xl border font-mono text-sm">⏱️ {fmt(globalElapsed)}</div>
           <button
@@ -744,6 +993,37 @@ const RoutineView: React.FC<{
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Session Restore Modal */}
+      {showSessionRestore && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-lg w-full max-w-md mx-4">
+            <div className="px-4 sm:px-5 py-4 border-b">
+              <h3 className="text-lg font-semibold">Resume Previous Session?</h3>
+            </div>
+            <div className="px-4 sm:px-5 py-4 text-sm">
+              <p className="mb-2">
+                You have an unfinished routine session. Would you like to continue where you left off?
+              </p>
+              <p className="text-gray-500 text-xs">Your progress and timing will be preserved.</p>
+            </div>
+            <div className="px-4 sm:px-5 py-4 border-t flex flex-col sm:flex-row justify-end gap-2">
+              <button
+                className="px-4 py-2 rounded-xl border text-sm"
+                onClick={() => {
+                  setShowSessionRestore(false);
+                  clearSessionState();
+                }}
+              >
+                Start Fresh
+              </button>
+              <button className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm" onClick={restoreSession}>
+                Resume Session
+              </button>
             </div>
           </div>
         </div>
