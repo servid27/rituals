@@ -511,7 +511,7 @@ const RoutineView: React.FC<{
     if (!running || !sessionStartTime) return;
 
     let rafId: number;
-    let intervalId: NodeJS.Timeout;
+    let intervalId: number;
 
     const updateTimers = () => {
       // Check running state from ref to get latest value
@@ -548,7 +548,7 @@ const RoutineView: React.FC<{
       if (runningRef.current) {
         updateTimers();
       }
-    }, 1000);
+    }, 1000) as unknown as number;
 
     return () => {
       if (rafId) {
