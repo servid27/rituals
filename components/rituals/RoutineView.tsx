@@ -78,7 +78,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({ routine, onEdit, onClo
       taskStartTime,
       pausedDuration,
       taskPausedDuration,
-      lastUpdateTime: Date.now(),
+      lastUpdateTime: running ? Date.now() : lastUpdateTime ?? Date.now(),
       routineId: routine.id,
       version: 1,
     } as const;
@@ -100,6 +100,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({ routine, onEdit, onClo
     startedAt,
     taskPausedDuration,
     taskStartTime,
+    lastUpdateTime,
   ]);
 
   const loadSessionState = useCallback(() => {
@@ -138,6 +139,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({ routine, onEdit, onClo
       setTaskStartTime(sessionState.taskStartTime);
       setPausedDuration(sessionState.pausedDuration || 0);
       setTaskPausedDuration(sessionState.taskPausedDuration || 0);
+      setLastUpdateTime(sessionState.lastUpdateTime || null);
 
       const now = Date.now();
       const timeSinceLastUpdate = now - (sessionState.lastUpdateTime || now);
@@ -148,6 +150,7 @@ export const RoutineView: React.FC<RoutineViewProps> = ({ routine, onEdit, onClo
         setRunning(false);
         if (!sessionState.running || timeSinceLastUpdate >= 300000) {
           setPausedDuration((prev) => prev + timeSinceLastUpdate);
+          setTaskPausedDuration((prev) => prev + timeSinceLastUpdate);
         }
       }
 
@@ -420,29 +423,65 @@ export const RoutineView: React.FC<RoutineViewProps> = ({ routine, onEdit, onClo
     (currentIndex != null ? perTaskElapsed : 0);
   const totalRemaining = totalTarget - totalActual;
 
+  useEffect(() => {
+    if (!sessionStarted || !sessionStartTime) return;
+
+    const referenceTime = running ? Date.now() : lastUpdateTime ?? Date.now();
+    const totalElapsedMs = referenceTime - sessionStartTime - pausedDuration;
+    const totalElapsedSec = Math.floor(totalElapsedMs / 1000);
+    setGlobalElapsed(Math.max(0, totalElapsedSec));
+
+    if (currentIndex !== null && taskStartTime) {
+      const taskElapsedMs = referenceTime - taskStartTime - taskPausedDuration;
+      const taskElapsedSec = Math.floor(taskElapsedMs / 1000);
+      setPerTaskElapsed(Math.max(0, taskElapsedSec));
+    }
+  }, [
+    sessionStarted,
+    sessionStartTime,
+    pausedDuration,
+    running,
+    lastUpdateTime,
+    currentIndex,
+    taskStartTime,
+    taskPausedDuration,
+  ]);
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-xl sm:text-2xl font-semibold">{routine.name}</h2>
-          {hasRestoredSession && (
-            <div className="text-sm text-blue-600 flex items-center gap-1">
-              <span>📋</span>
-              <span>Session restored - continuing where you left off</span>
+      <div className="sticky top-2 z-30">
+        <div className="rounded-2xl border bg-white/95 backdrop-blur px-4 py-3 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl sm:text-2xl font-semibold">{routine.name}</h2>
+              {hasRestoredSession && (
+                <div className="text-sm text-blue-600 flex items-center gap-1">
+                  <span>📋</span>
+                  <span>Session restored - continuing where you left off</span>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="px-3 py-2 rounded-xl border font-mono text-sm">⏱️ {fmt(globalElapsed)}</div>
-          <button
-            className={`px-3 py-2 rounded-xl text-sm ${running ? 'bg-gray-200 text-black' : 'bg-green-600 text-white'}`}
-            onClick={handleStartPause}
-          >
-            {running ? '⏸️ Pause' : '▶️ Start'}
-          </button>
-          <button className="px-3 py-2 rounded-xl border text-sm" onClick={reset}>
-            🔄 Reset
-          </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="px-3 py-2 rounded-xl border font-mono text-sm bg-white flex items-center">
+                <span className="mr-2">⏱️</span>
+                <span className="mr-2 text-gray-500">Elapsed</span>
+                <span>{fmt(globalElapsed)}</span>
+                <span className="mx-2 text-gray-400">/</span>
+                <span className="text-gray-500">Target {fmt(totalTarget)}</span>
+              </div>
+              <button
+                className={`px-3 py-2 rounded-xl text-sm ${
+                  running ? 'bg-gray-200 text-black' : 'bg-green-600 text-white'
+                }`}
+                onClick={handleStartPause}
+              >
+                {running ? '⏸️ Pause' : '▶️ Start'}
+              </button>
+              <button className="px-3 py-2 rounded-xl border text-sm" onClick={reset}>
+                🔄 Reset
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

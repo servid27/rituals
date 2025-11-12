@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import type { Routine } from '@/types/rituals';
 import { uid } from '@/libs/rituals-utils';
@@ -14,6 +14,9 @@ interface RitualsProps {
   initialRitualId?: string | null;
 }
 
+const LAST_ACTIVE_ROUTINE_KEY = 'rituals:last-active-id';
+const LAST_MODE_KEY = 'rituals:last-mode';
+
 export default function Rituals({ initialMode = 'home', initialRitualId = null }: RitualsProps = {}) {
   const { routines, setRoutines, sessions, addSession, deleteRoutine, isLoading } = useRitualsStore();
   const searchParams = useSearchParams();
@@ -21,6 +24,7 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
   const [activeId, setActiveId] = useState<string | null>(initialRitualId);
   const active = routines.find((r) => r.id === activeId) || null;
   const [draft, setDraft] = useState<Routine | null>(null);
+  const bootstrappedRef = useRef(false);
 
   const openNew = useCallback(() => {
     const routine: Routine = {
@@ -80,6 +84,51 @@ export default function Rituals({ initialMode = 'home', initialRitualId = null }
     setActiveId(draft.id);
     setDraft(null);
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      window.localStorage.setItem(LAST_MODE_KEY, mode);
+
+      if (mode === 'view' && activeId) {
+        window.localStorage.setItem(LAST_ACTIVE_ROUTINE_KEY, activeId);
+      } else if (mode !== 'view') {
+        window.localStorage.removeItem(LAST_ACTIVE_ROUTINE_KEY);
+      }
+    } catch (error) {
+      console.warn('Unable to persist ritual view state:', error);
+    }
+  }, [mode, activeId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isLoading) return;
+    if (mode !== 'home') return;
+    if (bootstrappedRef.current) return;
+    if (!routines.length) return;
+
+    bootstrappedRef.current = true;
+
+    try {
+      const storedMode = window.localStorage.getItem(LAST_MODE_KEY) as RitualsProps['initialMode'] | null;
+      const storedId = window.localStorage.getItem(LAST_ACTIVE_ROUTINE_KEY);
+      const fallbackRoutine = routines[0];
+      const storedRoutine = storedId ? routines.find((r) => r.id === storedId) : undefined;
+
+      if (storedMode === 'home') {
+        return;
+      }
+
+      const routineToOpen = storedRoutine || fallbackRoutine;
+
+      if (routineToOpen) {
+        openView(routineToOpen);
+      }
+    } catch (error) {
+      console.warn('Unable to restore last viewed routine:', error);
+    }
+  }, [isLoading, mode, routines, openView]);
 
   // Show loading state while data is being loaded
   if (isLoading) {
