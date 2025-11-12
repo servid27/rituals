@@ -1,3 +1,5 @@
+'use client';
+
 // Routine Card component for the home view
 
 import React from 'react';

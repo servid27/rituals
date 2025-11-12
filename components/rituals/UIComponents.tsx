@@ -1,3 +1,5 @@
+'use client';
+
 // Small UI components for the Rituals application
 
 import React from 'react';
