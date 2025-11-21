@@ -1,11 +1,47 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap");
+
 @import "tailwindcss";
 @plugin "daisyui" {
-  themes: light --default;
+  themes: light;
 }
 
 @theme {
-  --font-display: "Satoshi", "sans-serif";
-  
+  --font-display: "Plus Jakarta Sans", "sans-serif";
+  --color-primary: #2b8cee;
+
+  --color-background-light: #f9f7f3;
+  --color-background-dark: #101922;
+
+  --color-card-light: #ffffff;
+
+  --color-text-light: #4a4a4a;
+  --color-text-dark: #e0e0e0;
+
+  --color-subtext-light: #617589;
+  --color-subtext-dark: #94a3b8;
+
+  --color-progress-bg-light: #eae6f0;
+  --color-progress-bg-dark: #2e2a3a;
+
+  --color-nav-bg-light: #ffffff;
+  --color-nav-bg-dark: #18232e;
+
+  --color-nav-icon-bg-home: #cfe2ff;
+  --color-nav-icon-bg-progress: #d1f2e8;
+  --color-nav-icon-bg-streaks: #ffeacc;
+  --color-nav-icon-bg-profile: #f2d8d6;
+
+  --color-nav-icon-home: #3a86ff;
+  --color-nav-icon-progress: #34a853;
+  --color-nav-icon-streaks: #ff9f0a;
+  --color-nav-icon-profile: #e85d5d;
+
+  --font-display: "Plus Jakarta Sans", sans-serif;
+
+  --radius: 0.5rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-full: 9999px;
   --animate-shimmer: shimmer 3s ease-out infinite alternate;
   --animate-opacity: opacity 0.25s ease-in-out;
   --animate-appearFromRight: appearFromRight 300ms ease-in-out;
@@ -13,47 +49,130 @@
   --animate-popup: popup 0.25s ease-in-out;
 
   @keyframes shimmer {
-    0% { background-position: 0 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
+    0% {
+      background-position: 0 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
   }
 
   @keyframes opacity {
-    0% { opacity: 0; }
-    100% { opacity: 1; }
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
   }
 
   @keyframes appearFromRight {
-    0% { opacity: 0.3; transform: translate(15%, 0px); }
-    100% { opacity: 1; transform: translate(0); }
+    0% {
+      opacity: 0.3;
+      transform: translate(15%, 0px);
+    }
+    100% {
+      opacity: 1;
+      transform: translate(0);
+    }
   }
 
   @keyframes wiggle {
-    0%, 20%, 80%, 100% { transform: rotate(0deg); }
-    30%, 60% { transform: rotate(-2deg); }
-    40%, 70% { transform: rotate(2deg); }
-    45% { transform: rotate(-4deg); }
-    55% { transform: rotate(4deg); }
+    0%,
+    20%,
+    80%,
+    100% {
+      transform: rotate(0deg);
+    }
+    30%,
+    60% {
+      transform: rotate(-2deg);
+    }
+    40%,
+    70% {
+      transform: rotate(2deg);
+    }
+    45% {
+      transform: rotate(-4deg);
+    }
+    55% {
+      transform: rotate(4deg);
+    }
   }
 
   @keyframes popup {
-    0% { transform: scale(0.8); opacity: 0.8; }
-    50% { transform: scale(1.1); opacity: 1; }
-    100% { transform: scale(1); opacity: 1; }
+    0% {
+      transform: scale(0.8);
+      opacity: 0.8;
+    }
+    50% {
+      transform: scale(1.1);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
   }
 }
 
 html,
 body {
   scroll-behavior: smooth !important;
+  color: #4a4a4a;
 }
 
 progress::-webkit-progress-value {
   transition: 0.6s width ease-out;
 }
+.card-title {
+  @apply text-2xl  font-bold mb-2 leading-tight tracking-[-0.015em] text-text-light;
+}
+.color-main{
+  color: #8050D9;
+}
+.bg-main{
+  background: #8050D9;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  background-color: white;
+  justify-content: flex-start;
+  border-radius: 1.5rem;
+  padding: 1.2rem 1.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.subtext {
+  @apply flex justify-between text-base font-medium text-subtext-light;
+}
+.title-sm {
+  @apply text-sm text-subtext-light mb-3 font-bold uppercase flex  tracking-wider;
+}
 
+
+
+
+
+.bg-dashboard {
+  background-color: #f9f7f3;
+}
 .btn-gradient {
-  background: linear-gradient(60deg, #f79533, #f37055, #ef4e7b, #a166ab, #5073b8, #1098ad, #07b39b, #6fba82) !important;
+  background: linear-gradient(
+    60deg,
+    #f79533,
+    #f37055,
+    #ef4e7b,
+    #a166ab,
+    #5073b8,
+    #1098ad,
+    #07b39b,
+    #6fba82
+  ) !important;
   background-size: 300% 300% !important;
   animation: var(--animate-shimmer) !important;
   border: 0 !important;

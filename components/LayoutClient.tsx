@@ -14,6 +14,7 @@ import OfflineIndicator from './OfflineIndicator';
 import MonitoringProvider from './MonitoringProvider';
 import SpeedInsightsProvider from './SpeedInsightsProvider';
 import VercelAnalyticsProvider from './VercelAnalyticsProvider';
+import Navbar from './navbar';
 
 // Crisp customer chat support:
 // This component is separated from ClientLayout because it needs to be wrapped with <SessionProvider> to use useSession() hook
@@ -63,8 +64,13 @@ const ClientLayout = ({ children }: { children: ReactNode }) => {
               {/* Show a progress bar at the top when navigating between pages */}
               <NextTopLoader color={config.colors.main} showSpinner={false} />
 
+              {/* Navigation */}
+              <Navbar />
+
               {/* Content inside app/page.js files  */}
-              {children}
+              <div className="md:ml-20 lg:ml-64 pb-20 md:pb-0">
+                {children}
+              </div>
 
               {/* PWA Components */}
               <PWAInstallPrompt />

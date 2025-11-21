@@ -8,13 +8,15 @@ export const NumberInput: React.FC<{
   value: number;
   onChange: (_newValue: number) => void;
   className?: string;
-}> = ({ value, onChange, className }) => (
+  placeholder?: string;
+}> = ({ value, onChange, className, placeholder }) => (
   <input
     type="number"
-    className={`w-16 border rounded px-2 py-1 text-sm ${className || ''}`}
+    className={`w-16 bg-gray-100   rounded px-2 py-1  ${className || ''}`}
     min={0}
     value={value}
     onChange={(e) => onChange(parseInt(e.target.value || '0', 10))}
+    placeholder={placeholder}
   />
 );
 
