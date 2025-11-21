@@ -67,10 +67,14 @@ const ClientLayout = ({ children }: { children: ReactNode }) => {
               {/* Navigation */}
               <Navbar />
 
-              {/* Content inside app/page.js files  */}
-              <div className="md:ml-20 lg:ml-64 pb-20 md:pb-0">
-                {children}
-              </div>
+              {/* Content inside app/page.js files  - only offset when sidebar is visible */}
+              {/**
+               * ContentWrapper consumes the client session (useSession) and
+               * conditionally applies the left margin that reserves space for the
+               * desktop sidebar. This avoids the layout being constrained to
+               * 80vw when the sidebar is hidden for unauthenticated users.
+               */}
+              <ContentWrapper>{children}</ContentWrapper>
 
               {/* PWA Components */}
               <PWAInstallPrompt />
@@ -97,3 +101,18 @@ const ClientLayout = ({ children }: { children: ReactNode }) => {
 };
 
 export default ClientLayout;
+
+// Small wrapper component that reads the client session and conditionally
+// applies left margin to reserve space for the desktop sidebar only when the
+// user is authenticated.
+function ContentWrapper({ children }: { children: ReactNode }) {
+  const { data: session } = useSession();
+
+  // When session?.user is truthy, the desktop sidebar is rendered and we
+  // need to offset content with the same classes used previously. When not
+  // authenticated, we avoid applying the left margin so content uses full
+  // available width.
+  const className = session?.user ? 'md:ml-20 lg:ml-64 pb-20 md:pb-0' : 'pb-20 md:pb-0';
+
+  return <div className={className}>{children}</div>;
+}
